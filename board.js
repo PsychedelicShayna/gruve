@@ -7,7 +7,8 @@ const objects=new Map(),elements=new Map(),selected=new Set(),locked=new Set(),q
 let physics={},seq=0,running=false,dirty=true,epoch=0,drag=null,editorId=null,fitOnLoad=true,checkpointAt=0;
 let marks=[],pointMode=false,noteTarget=null,layout={boxes:new Map(),locals:new Map(),measured:new Map()},presets={};
 const client=crypto.randomUUID();
-const view=JSON.parse(sessionStorage.getItem('idea-board-view')||'null')||{x:innerWidth/2,y:innerHeight/2,z:1};
+const storedView=JSON.parse(sessionStorage.getItem('idea-board-view')||'null');
+const view=storedView||{x:innerWidth/2,y:innerHeight/2,z:1};
 const edgeLayer=svg('g',{id:'edges'}),shapeLayer=svg('g',{id:'shapes'}),marksLayer=svg('g',{id:'marks',class:'marks'});
 world.append(edgeLayer,shapeLayer,marksLayer);
 const BATCH_COLORS=['#6ee7a0','#ff7a7a','#7ab8ff','#c98bff','#ffb35c'];
@@ -197,7 +198,7 @@ function drawHandle(){
   if(selected.size!==1)return;
   const id=[...selected][0],o=objects.get(id),g=elements.get(id),local=layout.locals.get(id);
   if(!o||!g||!local||o.type==='edge'||o.type==='polygon'||o.type==='polyline'||o.type==='ellipse'&&o.preset)return;
-  const s=12/view.z;
+  const s=16/view.z;
   g.append(svg('rect',{class:'handle',x:local.bx+local.w-s/2,y:local.by+local.h-s/2,width:s,height:s,rx:s/4,'data-handle':id}));
 }
 function drawMarks(){
@@ -317,7 +318,7 @@ stream.addEventListener('snapshot',async e=>{
   objects.clear();for(const [id,o] of Object.entries(data.scene.objects))objects.set(id,o);
   physics=data.scene.physics;seq=data.seq;marks=data.marks||[];presets=data.presets||{};
   dirty=true;render();
-  if(fitOnLoad){fit();fitOnLoad=false;}
+  if(fitOnLoad){if(!storedView)fit();fitOnLoad=false;}
   ack('snapshot',seq);
 });
 stream.addEventListener('marks',e=>{marks=JSON.parse(e.data);drawMarks();});
@@ -340,7 +341,7 @@ function positionNoteInput(){
   const p=toScreen(noteTarget.x,noteTarget.y);input.style.left=(p.x+18)+'px';input.style.top=(p.y-14)+'px';
 }
 function showNoteInput(mark){noteTarget=mark;const input=$('mark-note');input.value='';input.hidden=false;positionNoteInput();input.focus();}
-function hideNoteInput(){$('mark-note').hidden=true;noteTarget=null;}
+function hideNoteInput(){const input=$('mark-note');input.hidden=true;noteTarget=null;input.blur();}
 async function commitNote(){
   const input=$('mark-note'),mark=noteTarget;if(!mark)return;
   const note=input.value.trim();hideNoteInput();
@@ -422,7 +423,8 @@ function editableTextOf(id){
   return null;
 }
 canvas.ondblclick=e=>{
-  const raw=e.target.closest('[data-id]')?.dataset.id;if(!raw)return;
+  // Pointer capture retargets dblclick to the canvas, so hit-test by position.
+  const raw=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-id]')?.dataset.id;if(!raw)return;
   const id=rootFor(raw,objects),edit=editableTextOf(id)||editableTextOf(raw);if(!edit)return;
   const o=objects.get(edit.target);editorId=edit;
   $('guide').hidden=false;$('editor').hidden=false;$('title').parentElement.hidden=!edit.title;
