@@ -204,7 +204,7 @@ function draw(o){
   if(g.dataset.signature===signature)return;
   g.dataset.signature=signature;
   // Keep child groups; rebuild only this object's own geometry (children are separate <g data-id> elements).
-  for(const child of [...g.children])if(!child.dataset?.id)child.remove();
+  for(const child of [...g.children])if(!child.dataset?.id&&!child.classList.contains("selection")&&!child.classList.contains("handle"))child.remove();
   const own=[];
   const w=local.w,h=local.h,bx=local.bx,by=local.by;
   if(o.type==='rect')own.push(svg('rect',{class:'shape',width:w,height:h,rx:o.rx??0,...styleAttrs(o,'#192435')}));
@@ -225,8 +225,15 @@ function draw(o){
   g.prepend(...own);
 }
 function drawHandle(){
-  for(const h of world.querySelectorAll('.handle'))h.remove();
-  if(selected.size!==1||is3d())return;
+  for(const h of world.querySelectorAll('.handle,.selection'))h.remove();
+  if(is3d())return;
+  for(const id of selected){
+    const g=elements.get(id),local=layout.locals.get(id),o=objects.get(id);
+    if(!g||!local||!o||o.type==='edge')continue;
+    const pad=4/view.z;
+    g.append(svg('rect',{class:'selection',x:local.bx-pad,y:local.by-pad,width:local.w+2*pad,height:local.h+2*pad,rx:6/view.z,fill:'none','stroke-width':1.5/view.z,'stroke-dasharray':`${5/view.z} ${4/view.z}`}));
+  }
+  if(selected.size!==1)return;
   const id=[...selected][0],o=objects.get(id),g=elements.get(id),local=layout.locals.get(id);
   if(!o||!g||!local||o.type==='edge'||o.type==='polygon'||o.type==='polyline'||o.type==='ellipse'&&o.preset)return;
   const s=16/view.z;

@@ -39,3 +39,4 @@ footer{position:fixed;bottom:17px;left:24px;right:24px;display:flex;justify-cont
 #marks-chip button{padding:1px 7px;font-size:11px;margin-left:6px}
 #toast{position:fixed;left:50%;bottom:55px;transform:translateX(-50%);background:#322537;border:1px solid #b36b7d;padding:10px 16px;border-radius:9px;display:none;max-width:80vw}
 @media(max-width:700px){header{inset:12px}.brand{gap:7px;letter-spacing:0}.brand span{display:none}nav{gap:3px}nav button{padding:5px 7px}#guide{right:12px;width:min(330px,calc(100vw - 24px))}}
+.selection{stroke:#a9c8ff;pointer-events:none}

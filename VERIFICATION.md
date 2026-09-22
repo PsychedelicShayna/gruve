@@ -1,3 +1,7 @@
+# Verification, 2026-09-22 (v1.2 independent QA)
+
+- Independent QA (Xvfb + Helium, isolated server, the operator's real scene copied in): 14 of 15 checks passed — upgrade, card semantics, override protection, table, built-in and user presets, all edge anchors and routes, group drag/reparent/ungroup, layout rejection and reorder, marks, camera persistence across reload, physics, undo/redo across re-expansion, a 40-command request. The one failure — Ctrl-click selected a card's text child in state but drew no feedback, since text has no stroke to highlight — is fixed with an explicit dashed selection outline on every selected primitive; verified by real Ctrl-click on the bench. 22 browser sequence assertions re-run: ALL PASS.
+
 # Verification, 2026-09-22 (v1.3, 3D view)
 
 - 6 camera tests: identity at rest (2D/3D agreement), perspective scale and depth ordering, yaw/pitch axis swings, unproject inverting project at arbitrary orientation, orthonormal basis, shading and colour mixing.
