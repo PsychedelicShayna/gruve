@@ -114,6 +114,24 @@ Rules: `${name}` substitutes a parameter into a string (a whole-string `"${point
 | Camera | `{"op":"view","fit":true}` · `{"op":"view","fit":["a","b"]}` · `{"op":"view","center":[400,-120],"zoom":1.2,"duration":400}` · `{"op":"view","by":[300,0]}` |
 | Wait / undo / redo | `{"op":"wait","duration":200}` · `{"op":"undo"}` · `{"op":"redo"}` |
 
+## 3D
+
+The board is 2D until the camera is unlocked: `{"op":"view","mode":"3d","yaw":35,"pitch":-30}` (or the **3D** button). Then:
+
+- Every position may carry `z` (toward the viewer; default 0) and polygon/polyline points may be `[x,y,z]`. A `polygon` with 3D points is a **face**, flat-shaded and depth-sorted; a `polyline` is an **edge**; a small `ellipse` is a **vertex**. A free group (no `layout`) is a 3D container: its children's `x`,`y`,`z` are relative to it.
+- Cards, tables, lists, text, rects and ellipses are **billboards**: they always face the viewer and scale with distance. The board will not tilt text.
+- Built-ins `cube(size,color)` and `pyramid(size,height,color)` are groups of faces; define others the same way with explicit `[x,y,z]` points.
+- Camera: `view` accepts `yaw` (degrees, orbit around the vertical axis), `pitch` (-85..85), `center:[x,y,z]`, `zoom`, `fit`, and `mode:"2d"|"3d"`. `state.view` reports `mode`, `yaw`, `pitch`, `cz`. In the UI: right-drag orbits, drag pans, wheel zooms. With yaw = pitch = 0 and every z = 0 the 3D view is identical to 2D.
+- Physics pauses while in 3D; `box` values stay 2D world boxes; marks are placed on the z = 0 plane.
+
+```json
+[{"op":"create","object":{"id":"tower","type":"cube","x":0,"y":0,"z":0,"size":120,"color":"#7ab8ff"}},
+ {"op":"create","object":{"id":"roof","type":"pyramid","x":0,"y":-120,"z":0,"size":120,"height":80,"color":"#ffd479"}},
+ {"op":"create","object":{"id":"why","type":"card","x":200,"y":-200,"z":60,"title":"A tower","text":"Two presets stacked in z."}},
+ {"op":"view","mode":"3d","center":[0,-60,0],"zoom":1.2,"yaw":30,"pitch":-25,"duration":400}]
+```
+
+
 `select` accepts `"id"`, `["a","b"]`, or a filter: `type` (primitive or preset name), `preset`, `tag`, `parent`, `roots:true`, `ids`, then `fraction`, `slice:[start,end]`, `limit`. `{}` selects everything. Moving a child of a laid-out group is an error (reorder or reparent it instead). Removing a group removes its children and their edges; ungrouping keeps them.
 
 Durations are milliseconds. Create/remove default to 180 ms fades; everything else is immediate unless given `duration`. Numbers and six-digit colours interpolate. Bulk creation makes `dot-0`, `dot-1`, …; `arrange:"grid"` with `spacing` replaces scatter.

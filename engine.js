@@ -156,6 +156,7 @@ const unit=(p,q)=>{const dx=q.x-p.x,dy=q.y-p.y,d=Math.hypot(dx,dy)||1;return {x:
 // World-space outline points for polygons/polylines.
 export function worldPoints(o,boxes){
   const b=boxes.get(o.id);if(!b)return [];
+  if(b.pts)return b.pts;   // pre-projected (3D view)
   return (o.points||[]).map(p=>({x:b.ox+p[0],y:b.oy+p[1]}));
 }
 // Point on the outline of `o` along the ray from its box centre towards `target`.

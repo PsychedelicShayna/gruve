@@ -116,7 +116,7 @@ def commit(payload):
                 known={o['id'] for o in delta['upsert']}
                 for i in affected:
                     if i not in known:delta['upsert'].append(copy.deepcopy(candidate['objects'][i]))
-                    fields=['x','y'] if op in ('move','layout') else ['vx','vy','body'] if op=='impulse' else list(c.get('props',{}))
+                    fields=['x','y','z'] if op in ('move','layout') else ['vx','vy','body'] if op=='impulse' else list(c.get('props',{}))
                     delta['fields'][i]=list(set(delta['fields'].get(i,[]))|set(fields))
             pending.append(dict(op=op,patch=delta,selected=selected.copy(),duration=duration,stagger=stagger,command=c))
         # Commit the complete validated sequence, then publish individual events.
@@ -167,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.flush()
             except (BrokenPipeError,ConnectionResetError):pass
             return
-        files={'/':'board.html','/board.js':'board.js','/engine.js':'engine.js','/board.css':'board.css'}
+        files={'/':'board.html','/board.js':'board.js','/engine.js':'engine.js','/camera.js':'camera.js','/board.css':'board.css'}
         if args.test:files['/test-browser.html']='test-browser.html'
         if path not in files:return self.json({'error':'not found'},404)
         file=ROOT/files[path];content=file.read_bytes();self.send_response(200)
@@ -193,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
                 with lock:
                     client=str(data['client'])[:120];stage=data['stage'];n=int(data['seq'])
                     view=data.get('view')
-                    if isinstance(view,dict):view={k:number(view[k],k) for k in ('cx','cy','zoom','w','h') if k in view}
+                    if isinstance(view,dict):view={k:(view[k] if k=='mode' else number(view[k],k)) for k in ('cx','cy','cz','zoom','w','h','mode','yaw','pitch') if k in view}
                     clients[client]={'seen':time.time()*1000,'seq':n,'stage':stage,'visible':data.get('visible',False),'view':view if view else clients.get(client,{}).get('view')}
                     if stage in ('firstFrame','done') and n in receipts:
                         timestamp=float(data['time'])
@@ -205,8 +205,8 @@ class Handler(BaseHTTPRequestHandler):
                         for i,p in (data.get('positions') or {}).items():
                             o=scene['objects'].get(i)
                             if o and o.get('parent') is None and isinstance(p,dict):
-                                for k in ('x','y','vx','vy'):
-                                    if k in p and o.get(k)!=p[k]:o[k]=number(p[k]);changed=True
+                                for k in ('x','y','z','vx','vy'):
+                                    if k in p and o.get(k,0)!=p[k]:o[k]=number(p[k]);changed=True
                         for i,m in (data.get('measured') or {}).items():
                             if i in scene['objects'] and isinstance(m,dict):
                                 clean={k:number(m[k],k) for k in ('w','h','contentW','contentH') if k in m};clean['overflow']=bool(m.get('overflow'))

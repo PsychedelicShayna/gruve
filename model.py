@@ -516,7 +516,7 @@ def operation(scene, c):
     op = c.get('op')
     objs = scene['objects']
     selected = []
-    allowed = {'create', 'set', 'remove', 'move', 'reparent', 'group', 'ungroup', 'link', 'define', 'physics', 'impulse', 'layout', 'view', 'wait', 'clear'}
+    allowed = {'create', 'set', 'remove', 'move', 'reparent', 'group', 'ungroup', 'link', 'define', 'undefine', 'physics', 'impulse', 'layout', 'view', 'wait', 'clear'}
     if op not in allowed:
         raise ValueError(f'unknown op {op!r}; ops are ' + ', '.join(sorted(allowed | {'undo', 'redo'})))
     for key in ('duration', 'stagger'):
@@ -633,6 +633,13 @@ def operation(scene, c):
             raise ValueError('preset name collides with a primitive type')
         validate_preset(d)
         scene.setdefault('presets', {})[d['name']] = copy.deepcopy(d)
+    elif op == 'undefine':
+        name = c.get('name')
+        if name not in scene.get('presets', {}):
+            raise ValueError('undefine names a user preset; built-ins cannot be removed')
+        if any(o.get('preset') == name for o in objs.values()) and name not in BUILTIN_PRESETS:
+            raise ValueError(f'preset {name} is still in use; remove its instances first')
+        del scene['presets'][name]
     elif op == 'link':
         props = c.get('props', {})
         if not isinstance(props, dict):
@@ -641,8 +648,8 @@ def operation(scene, c):
         add({**head, **props, 'id': c.get('id'), 'type': 'edge', 'from': c.get('from'), 'to': c.get('to')})
     elif op == 'view':
         if 'center' in c:
-            if not isinstance(c['center'], list) or len(c['center']) != 2:
-                raise ValueError('view center must be [x,y]')
+            if not isinstance(c['center'], list) or len(c['center']) not in (2, 3):
+                raise ValueError('view center must be [x,y] or [x,y,z]')
             for v in c['center']:
                 number(v, 'center')
         if 'by' in c:
@@ -654,8 +661,14 @@ def operation(scene, c):
             raise ValueError('zoom must be 0.05..8')
         if 'fit' in c and c['fit'] is not True:
             selected = select(scene, c['fit'])
-        if not {'center', 'by', 'zoom', 'fit'} & set(c):
-            raise ValueError('view needs center, by, zoom or fit')
+        if 'mode' in c and c['mode'] not in ('2d', '3d'):
+            raise ValueError('view mode must be "2d" or "3d"')
+        if 'yaw' in c:
+            number(c['yaw'], 'yaw')
+        if 'pitch' in c and not -85 <= number(c['pitch'], 'pitch') <= 85:
+            raise ValueError('pitch must be -85..85 degrees')
+        if not {'center', 'by', 'zoom', 'fit', 'mode', 'yaw', 'pitch'} & set(c):
+            raise ValueError('view needs center, by, zoom, fit, mode, yaw or pitch')
     elif op == 'physics':
         props = c.get('props', {})
         if set(props) - set(DEFAULT_PHYSICS):
@@ -709,17 +722,21 @@ def operation(scene, c):
                     raise ValueError(f'{i} is positioned by the layout of {p}; reorder its parent\'s children with set, or reparent it')
             if 'to' in c:
                 dest = c['to']
-                if not isinstance(dest, list) or len(dest) != 2:
-                    raise ValueError('move to needs [x,y]')
-                delta = [number(dest[0]) - objs[selected[0]].get('x', 0), number(dest[1]) - objs[selected[0]].get('y', 0)]
+                if not isinstance(dest, list) or len(dest) not in (2, 3):
+                    raise ValueError('move to needs [x,y] or [x,y,z]')
+                o = objs[selected[0]]
+                delta = [number(dest[0]) - o.get('x', 0), number(dest[1]) - o.get('y', 0)] + ([number(dest[2]) - o.get('z', 0)] if len(dest) == 3 else [])
             else:
                 delta = c.get('by')
-            if not isinstance(delta, list) or len(delta) != 2:
-                raise ValueError('move needs by:[dx,dy] or to:[x,y]')
-            dx, dy = [number(v) for v in delta]
+            if not isinstance(delta, list) or len(delta) not in (2, 3):
+                raise ValueError('move needs by:[dx,dy] or to:[x,y]; a third value moves in z')
+            dx, dy = number(delta[0]), number(delta[1])
+            dz = number(delta[2]) if len(delta) == 3 else 0
             for i in selected:
                 objs[i]['x'] = objs[i].get('x', 0) + dx
                 objs[i]['y'] = objs[i].get('y', 0) + dy
+                if dz:
+                    objs[i]['z'] = objs[i].get('z', 0) + dz
         elif op == 'remove':
             for i in selected:
                 owner = instance_of(scene, i)

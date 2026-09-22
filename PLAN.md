@@ -62,6 +62,6 @@ Built-ins live in `presets.json` and use exactly this machinery: `card`, `code`,
 
 v1.1 scenes upgrade once on load (a backup is written first): `card`/`code`/`text` → `card`/`code`/`label` instances; `dot`→`dot`, `diamond`→`diamond`, `rectangle`→`rect`; `line`/`arrow`/`path` with points → `polyline`/`polygon`; `from`/`to` links → `edge`; group members → children in local coordinates. Root ids are preserved; if a generated child id collides, the upgrade fails loudly.
 
-## Out of scope for v1.2
+## Out of scope
 
-Rotation, 3D projection and camera tilt, images, Markdown, rich text, obstacle-avoiding routes, nested physics, constraint solving beyond hug/fill/stack/row/grid.
+Rotation of 2D objects, tilted text, hidden-surface removal beyond painter's sorting, physics in the 3D view, images, Markdown, rich text, obstacle-avoiding routes, nested physics, constraint solving beyond hug/fill/stack/row/grid.

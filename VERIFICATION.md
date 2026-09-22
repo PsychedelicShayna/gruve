@@ -1,3 +1,9 @@
+# Verification, 2026-09-22 (v1.3, 3D view)
+
+- 6 camera tests: identity at rest (2D/3D agreement), perspective scale and depth ordering, yaw/pitch axis swings, unproject inverting project at arbitrary orientation, orthonormal basis, shading and colour mixing.
+- On a private Xephyr display with the real Helium (slice-capped, tiled on the operator's left monitor): `view mode:"3d"` with yaw/pitch drew shaded cube and pyramid faces, a far cube smaller and behind, billboarded cards, projected edges including fixed-point anchors; `state.view` reported `mode/yaw/pitch/cz`. Real right-drag orbited (yaw 35→107); real left-drag moved the front pyramid on the camera-facing plane by a bounded (+46, −105, +61) for an 80×120 px drag and the `move … to:[x,y,z]` reached the server; the idle checkpoint now carries z.
+- Painter's sorting is per face by mean depth; intersecting faces can mis-sort. Occlusion between separate solids was correct in the runs above.
+
 # Verification, 2026-09-22 (v1.2, primitives and composites)
 
 - 22 Python model tests: preset expansion into stable child ids, single-item aliases, parameter re-expansion keeping edges, override protection with `resetOverrides`, `when`, user presets with expressions and nested repeat, literal `${}` text not reinterpreted, expression language rejecting anything beyond `+ - * / ( )`, table nesting, group/ungroup/reparent coordinate conversion, laid-out child move rejection, cascade removal, anchor validation including vertex references on later polygon edits, selection filters, null deletes, sizing keywords, v2→v3 upgrade.

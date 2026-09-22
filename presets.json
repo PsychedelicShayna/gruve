@@ -349,5 +349,540 @@
         ]
       }
     ]
+  },
+  "cube": {
+    "name": "cube",
+    "doc": "A cube of side size centred on its origin. Faces are polygons with 3D points; visible in 3D view, a square in 2D.",
+    "params": {
+      "size": 100,
+      "color": "#8eaede"
+    },
+    "group": {},
+    "items": [
+      {
+        "id": "back",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "left",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "right",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "top",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "bottom",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "front",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      }
+    ]
+  },
+  "pyramid": {
+    "name": "pyramid",
+    "doc": "Square pyramid: base of side size in the y = size/2 plane, apex above it. Visible in 3D view.",
+    "params": {
+      "size": 100,
+      "height": 100,
+      "color": "#ffd479"
+    },
+    "group": {},
+    "items": [
+      {
+        "id": "base",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "north",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            0,
+            {
+              "$": "size/2-height"
+            },
+            0
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "east",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            0,
+            {
+              "$": "size/2-height"
+            },
+            0
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "south",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            0,
+            {
+              "$": "size/2-height"
+            },
+            0
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      },
+      {
+        "id": "west",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "size/2"
+            }
+          ],
+          [
+            {
+              "$": "-size/2"
+            },
+            {
+              "$": "size/2"
+            },
+            {
+              "$": "-size/2"
+            }
+          ],
+          [
+            0,
+            {
+              "$": "size/2-height"
+            },
+            0
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${color}"
+      }
+    ]
   }
 }
