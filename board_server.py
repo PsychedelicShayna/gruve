@@ -9,7 +9,7 @@ import threading
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from model import fresh, operation, patch, number, descendants
+from model import fresh, operation, patch, number, descendants, upgrade, presets_of, VERSION
 
 ROOT=Path(__file__).parent
 parser=argparse.ArgumentParser()
@@ -24,8 +24,17 @@ saved=json.loads(STATE.read_text()) if STATE.exists() else {}
 scene=saved.get('scene',fresh());seq=saved.get('seq',0)
 undo=saved.get('undo',[]);redo=saved.get('redo',[])
 marks=saved.get('marks',[])
+if scene.get('version')!=VERSION:
+    # One-time upgrade of a v1.1 scene; the original is kept beside it.
+    backup=args.data/f'scene.v{scene.get("version",2)}.json'
+    if STATE.exists() and not backup.exists():backup.write_bytes(STATE.read_bytes())
+    scene=upgrade(scene);undo=[];redo=[]
+    marks=[m for m in marks if not m.get('target') or m['target'] in scene['objects']]
 events=[];clients={};receipts={};request_ids={};marks_rev=0
 MARK_BATCHES=5
+
+def preset_summary():
+    return {name:dict(params=p['params'],doc=p.get('doc',''),builtin=name not in scene.get('presets',{})) for name,p in presets_of(scene).items()}
 
 def visible_view():
     live=[c for c in clients.values() if c.get('visible') and c.get('view')]
@@ -102,8 +111,8 @@ def commit(payload):
             delta=copy.deepcopy(patch(before,candidate))
             # Semantic commands still apply when browser physics has changed positions
             # beyond the last server checkpoint, even if the server diff is empty.
-            if op in ('move','layout','set','animate','impulse'):
-                affected=descendants(candidate,selected) if op in ('move','layout') else selected
+            if op in ('move','layout','set','impulse'):
+                affected=selected
                 known={o['id'] for o in delta['upsert']}
                 for i in affected:
                     if i not in known:delta['upsert'].append(copy.deepcopy(candidate['objects'][i]))
@@ -134,14 +143,16 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():return self.json({'error':'local origin required'},403)
         url=urlparse(self.path);path=url.path;query=parse_qs(url.query)
         if path=='/state':
-            with lock:return self.json(dict(seq=seq,view=visible_view(),marks=[m for m in marks if not m['read']],**scene))
+            with lock:return self.json(dict(seq=seq,view=visible_view(),marks=[m for m in marks if not m['read']],**{**scene,'presets':preset_summary()}))
         if path=='/status':
-            with lock:return self.json(dict(version=2,seq=seq,objects=len(scene['objects']),view=visible_view(),clients=clients,receipts={str(k):v for k,v in list(receipts.items())[-200:]}))
+            with lock:return self.json(dict(version=3,seq=seq,objects=len(scene['objects']),view=visible_view(),clients=clients,receipts={str(k):v for k,v in list(receipts.items())[-200:]}))
+        if path=='/presets':
+            with lock:return self.json(dict(presets=presets_of(scene)))
         if path=='/marks':
             with lock:return self.json(dict(marks=take_marks(query.get('take',['1'])[0]!='0'),view=visible_view()))
         if path=='/events':
             self.send_response(200);self.send_header('Content-Type','text/event-stream');self.send_header('Cache-Control','no-cache');self.end_headers()
-            with lock:initial=dict(scene=copy.deepcopy(scene),seq=seq,marks=copy.deepcopy(marks));cursor=seq;marks_seen=marks_rev
+            with lock:initial=dict(scene=copy.deepcopy(scene),seq=seq,marks=copy.deepcopy(marks),presets=preset_summary());cursor=seq;marks_seen=marks_rev
             try:
                 self.wfile.write(('event: snapshot\ndata: '+json.dumps(initial)+'\n\n').encode());self.wfile.flush()
                 while True:
@@ -192,13 +203,18 @@ class Handler(BaseHTTPRequestHandler):
                     if stage in ('done','checkpoint') and n==seq and data.get('visible'):
                         changed=False
                         for i,p in (data.get('positions') or {}).items():
-                            if i in scene['objects'] and isinstance(p,dict):
+                            o=scene['objects'].get(i)
+                            if o and o.get('parent') is None and isinstance(p,dict):
                                 for k in ('x','y','vx','vy'):
-                                    if k in p:scene['objects'][i][k]=number(p[k]);changed=True
+                                    if k in p and o.get(k)!=p[k]:o[k]=number(p[k]);changed=True
                         for i,m in (data.get('measured') or {}).items():
                             if i in scene['objects'] and isinstance(m,dict):
                                 clean={k:number(m[k],k) for k in ('w','h','contentW','contentH') if k in m};clean['overflow']=bool(m.get('overflow'))
                                 if scene['objects'][i].get('measured')!=clean:scene['objects'][i]['measured']=clean;changed=True
+                        for i,b in (data.get('boxes') or {}).items():
+                            if i in scene['objects'] and isinstance(b,dict):
+                                clean={k:number(b[k],k) for k in ('x','y','w','h') if k in b}
+                                if scene['objects'][i].get('box')!=clean:scene['objects'][i]['box']=clean;changed=True
                         if changed:persist()
                 return self.json({'ok':True})
             return self.json({'error':'not found'},404)

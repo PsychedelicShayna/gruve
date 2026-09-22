@@ -29,7 +29,7 @@ try:
                 try:status=get('/status');break
                 except (OSError,urllib.error.URLError):time.sleep(.1)
             else:raise RuntimeError('server did not start; read data/server.log')
-        if status.get('version')!=2:raise RuntimeError('port is occupied by another service')
+        if status.get('version')!=3:raise RuntimeError('port is occupied by another service or an older board')
         print(json.dumps({'url':url,'version':status['version'],'objects':status['objects']}))
     elif a.action=='open':subprocess.run(['xdg-open',url],check=True)
     elif a.action in ('state','status'):print(json.dumps(get('/'+a.action)))

@@ -1,0 +1,353 @@
+{
+  "card": {
+    "name": "card",
+    "doc": "Titled text box. Grows to its text; give w to change the wrap width.",
+    "params": {
+      "title": "",
+      "text": "",
+      "w": 260,
+      "color": "#8eaede",
+      "fill": "#192435",
+      "size": 14
+    },
+    "group": {
+      "w": {
+        "$": "w"
+      },
+      "layout": {
+        "type": "stack",
+        "gap": 6
+      },
+      "padding": 15
+    },
+    "items": [
+      {
+        "id": "bg",
+        "type": "rect",
+        "w": "fill",
+        "h": "fill",
+        "rx": 13,
+        "color": "${color}",
+        "fill": "${fill}",
+        "strokeWidth": 1.6
+      },
+      {
+        "id": "title",
+        "type": "text",
+        "when": "title",
+        "text": "${title}",
+        "w": "fill",
+        "size": {
+          "$": "size"
+        },
+        "weight": 650,
+        "color": "#dde5f1"
+      },
+      {
+        "id": "body",
+        "type": "text",
+        "when": "text",
+        "text": "${text}",
+        "w": "fill",
+        "size": {
+          "$": "size"
+        },
+        "color": "#dde5f1"
+      }
+    ]
+  },
+  "code": {
+    "name": "code",
+    "doc": "Monospace block with optional title. Whitespace is preserved.",
+    "params": {
+      "title": "",
+      "text": "",
+      "w": 420,
+      "color": "#8eaede",
+      "fill": "#192435",
+      "size": 13
+    },
+    "group": {
+      "w": {
+        "$": "w"
+      },
+      "layout": {
+        "type": "stack",
+        "gap": 6
+      },
+      "padding": 15
+    },
+    "items": [
+      {
+        "id": "bg",
+        "type": "rect",
+        "w": "fill",
+        "h": "fill",
+        "rx": 8,
+        "color": "${color}",
+        "fill": "${fill}",
+        "strokeWidth": 1.6
+      },
+      {
+        "id": "title",
+        "type": "text",
+        "when": "title",
+        "text": "${title}",
+        "w": "fill",
+        "size": 14,
+        "weight": 650,
+        "color": "#dde5f1"
+      },
+      {
+        "id": "body",
+        "type": "text",
+        "when": "text",
+        "text": "${text}",
+        "w": "fill",
+        "size": {
+          "$": "size"
+        },
+        "font": "mono",
+        "color": "#b4e1cc"
+      }
+    ]
+  },
+  "label": {
+    "name": "label",
+    "doc": "Free-standing wrapped text with no box.",
+    "params": {
+      "text": "",
+      "w": 260,
+      "color": "#dde5f1",
+      "size": 14,
+      "align": "left"
+    },
+    "items": [
+      {
+        "id": "text",
+        "type": "text",
+        "text": "${text}",
+        "w": {
+          "$": "w"
+        },
+        "size": {
+          "$": "size"
+        },
+        "color": "${color}",
+        "align": "${align}"
+      }
+    ]
+  },
+  "dot": {
+    "name": "dot",
+    "doc": "A filled circle; also a vertex.",
+    "params": {
+      "r": 8,
+      "color": "#8eaede"
+    },
+    "items": [
+      {
+        "id": "shape",
+        "type": "ellipse",
+        "r": {
+          "$": "r"
+        },
+        "color": "${color}",
+        "fill": "${color}"
+      }
+    ]
+  },
+  "diamond": {
+    "name": "diamond",
+    "doc": "A rhombus w by h.",
+    "params": {
+      "w": 120,
+      "h": 80,
+      "color": "#8eaede",
+      "fill": "#192435"
+    },
+    "items": [
+      {
+        "id": "shape",
+        "type": "polygon",
+        "points": [
+          [
+            {
+              "$": "w/2"
+            },
+            0
+          ],
+          [
+            {
+              "$": "w"
+            },
+            {
+              "$": "h/2"
+            }
+          ],
+          [
+            {
+              "$": "w/2"
+            },
+            {
+              "$": "h"
+            }
+          ],
+          [
+            0,
+            {
+              "$": "h/2"
+            }
+          ]
+        ],
+        "color": "${color}",
+        "fill": "${fill}"
+      }
+    ]
+  },
+  "list": {
+    "name": "list",
+    "doc": "Bulleted lines in a box. items is an array of strings.",
+    "params": {
+      "title": "",
+      "items": [],
+      "w": 260,
+      "color": "#8eaede",
+      "fill": "#192435",
+      "size": 14,
+      "bullet": "\u2022"
+    },
+    "group": {
+      "w": {
+        "$": "w"
+      },
+      "layout": {
+        "type": "stack",
+        "gap": 4
+      },
+      "padding": 15
+    },
+    "items": [
+      {
+        "id": "bg",
+        "type": "rect",
+        "w": "fill",
+        "h": "fill",
+        "rx": 13,
+        "color": "${color}",
+        "fill": "${fill}",
+        "strokeWidth": 1.6
+      },
+      {
+        "id": "title",
+        "type": "text",
+        "when": "title",
+        "text": "${title}",
+        "w": "fill",
+        "size": {
+          "$": "size"
+        },
+        "weight": 650,
+        "color": "#dde5f1"
+      },
+      {
+        "repeat": "items",
+        "as": "item",
+        "index": "i",
+        "items": [
+          {
+            "id": "item-${i}",
+            "type": "text",
+            "text": "${bullet} ${item}",
+            "w": "fill",
+            "size": {
+              "$": "size"
+            },
+            "color": "#dde5f1"
+          }
+        ]
+      }
+    ]
+  },
+  "table": {
+    "name": "table",
+    "doc": "Grid of cells. rows is an array of rows, each an array of cell strings; cols must match the row length.",
+    "params": {
+      "rows": [
+        [
+          "a",
+          "b"
+        ],
+        [
+          "c",
+          "d"
+        ]
+      ],
+      "cols": 2,
+      "cellW": 140,
+      "color": "#8eaede",
+      "fill": "#192435",
+      "size": 13
+    },
+    "group": {
+      "layout": {
+        "type": "grid",
+        "cols": {
+          "$": "cols"
+        },
+        "gap": 0
+      },
+      "padding": 0
+    },
+    "items": [
+      {
+        "repeat": "rows",
+        "as": "row",
+        "index": "r",
+        "items": [
+          {
+            "repeat": "row",
+            "as": "cell",
+            "index": "c",
+            "items": [
+              {
+                "id": "cell-${r}-${c}",
+                "type": "group",
+                "layout": {
+                  "type": "stack"
+                },
+                "padding": 8,
+                "w": {
+                  "$": "cellW"
+                },
+                "h": "fill"
+              },
+              {
+                "id": "cell-${r}-${c}/bg",
+                "type": "rect",
+                "w": "fill",
+                "h": "fill",
+                "rx": 0,
+                "color": "${color}",
+                "fill": "${fill}",
+                "strokeWidth": 1,
+                "parent": "cell-${r}-${c}"
+              },
+              {
+                "id": "cell-${r}-${c}/text",
+                "type": "text",
+                "text": "${cell}",
+                "w": "fill",
+                "size": {
+                  "$": "size"
+                },
+                "color": "#dde5f1",
+                "parent": "cell-${r}-${c}"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

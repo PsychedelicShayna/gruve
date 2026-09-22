@@ -1,3 +1,11 @@
+# Verification, 2026-09-22 (v1.2, primitives and composites)
+
+- 22 Python model tests: preset expansion into stable child ids, single-item aliases, parameter re-expansion keeping edges, override protection with `resetOverrides`, `when`, user presets with expressions and nested repeat, literal `${}` text not reinterpreted, expression language rejecting anything beyond `+ - * / ( )`, table nesting, group/ungroup/reparent coordinate conversion, laid-out child move rejection, cascade removal, anchor validation including vertex references on later polygon edits, selection filters, null deletes, sizing keywords, v2→v3 upgrade.
+- 13 JavaScript engine tests: card hug + fill background, text overflow, group overflow, negative-bounds hug with preserved origin, content-sized grid tracks with stretched cells, row layout, outline attachment on rect/ellipse/polygon, side/at/vertex/fixed anchors, elbow shape, head trims, root-only physics dragging resolved boxes, pinning/collision, interpolation of sizing keywords.
+- 22 browser sequence assertions (`--test` server on 8794, isolated data): the v1.1 sequence plus card-as-group, hug/fill, parameter re-expansion growth, fixed-height overflow, table row stretching, and browser-resolved boxes/measurements reaching `/state`.
+- The live v1.1 scene (51 objects) upgraded to 120 primitives with ids preserved and rendered without console errors; cards, constellation, zodiac grid and arrows intact. `data/scene.v2.json` is written before an upgrade.
+- Headless smoke of the new vocabulary: table with a wrapping cell, list, mono code, user-defined pyramid, titled free group with a reparented dot, edges to a side with offset, from a vertex with a negative curve, and to a fixed point with `open`/`bar` ends.
+
 # Verification, 2026-09-22 (v1.1)
 
 - 17 Python model tests (+3): `view` targets and fit selection, link `head`/`route` validation, `set` null-deletes and read-only `measured`.
