@@ -8,7 +8,7 @@ from pathlib import Path
 import threading
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from model import fresh, operation, patch, number, descendants
 
 ROOT=Path(__file__).parent
@@ -23,11 +23,58 @@ lock=threading.Condition()
 saved=json.loads(STATE.read_text()) if STATE.exists() else {}
 scene=saved.get('scene',fresh());seq=saved.get('seq',0)
 undo=saved.get('undo',[]);redo=saved.get('redo',[])
-events=[];clients={};receipts={};request_ids={}
+marks=saved.get('marks',[])
+events=[];clients={};receipts={};request_ids={};marks_rev=0
+MARK_BATCHES=5
+
+def visible_view():
+    live=[c for c in clients.values() if c.get('visible') and c.get('view')]
+    return max(live,key=lambda c:c['seen'])['view'] if live else None
+
+def add_mark(data):
+    """Marks are pointers from the human to the model: numbered within the unread batch, never part of the scene."""
+    global marks_rev
+    x=number(data['x'],'x');y=number(data['y'],'y')
+    target=data.get('target');note=data.get('note','')
+    if target is not None and (not isinstance(target,str) or target not in scene['objects']): target=None
+    if not isinstance(note,str) or len(note)>2000: raise ValueError('note must be text')
+    unread=[m for m in marks if not m['read']]
+    batch=unread[0]['batch'] if unread else (marks[-1]['batch']+1 if marks else 1)
+    offset=None
+    if target:
+        o=scene['objects'][target];offset=[x-o.get('x',0),y-o.get('y',0)]
+    m=dict(n=len(unread)+1,batch=batch,x=x,y=y,target=target,offset=offset,note=note,at=time.time()*1000,read=False)
+    marks.append(m);marks_rev+=1;prune_marks();persist();lock.notify_all()
+    return m
+
+def prune_marks():
+    batches=sorted({m['batch'] for m in marks})
+    keep=set(batches[-MARK_BATCHES:])
+    marks[:]=[m for m in marks if m['batch'] in keep]
+
+def take_marks(consume):
+    global marks_rev
+    unread=[m for m in marks if not m['read']]
+    if consume and unread:
+        for m in unread:m['read']=True
+        marks_rev+=1;persist();lock.notify_all()
+    return copy.deepcopy(unread)
+
+def clear_marks():
+    global marks_rev
+    marks.clear();marks_rev+=1;persist();lock.notify_all()
+
+def note_mark(ref,note):
+    global marks_rev
+    if not isinstance(note,str) or len(note)>2000: raise ValueError('note must be text')
+    for m in marks:
+        if m['batch']==ref.get('batch') and m['n']==ref.get('n'):
+            m['note']=note;marks_rev+=1;persist();lock.notify_all();return copy.deepcopy(m)
+    raise ValueError('unknown mark')
 
 def persist():
     tmp=STATE.with_suffix('.tmp')
-    tmp.write_text(json.dumps(dict(scene=scene,seq=seq,undo=undo[-30:],redo=redo[-30:])))
+    tmp.write_text(json.dumps(dict(scene=scene,seq=seq,undo=undo[-30:],redo=redo[-30:],marks=marks)))
     os.replace(tmp,STATE)
 
 def commit(payload):
@@ -62,7 +109,7 @@ def commit(payload):
                     if i not in known:delta['upsert'].append(copy.deepcopy(candidate['objects'][i]))
                     fields=['x','y'] if op in ('move','layout') else ['vx','vy','body'] if op=='impulse' else list(c.get('props',{}))
                     delta['fields'][i]=list(set(delta['fields'].get(i,[]))|set(fields))
-            pending.append(dict(op=op,patch=delta,selected=selected.copy(),duration=duration,stagger=stagger,by=c.get('by'),to=c.get('to'),velocity=c.get('velocity')))
+            pending.append(dict(op=op,patch=delta,selected=selected.copy(),duration=duration,stagger=stagger,command=c))
         # Commit the complete validated sequence, then publish individual events.
         scene=candidate;undo=u;redo=r
         now=time.time()*1000
@@ -85,23 +132,27 @@ class Handler(BaseHTTPRequestHandler):
         return self.headers.get('Host') in (f'127.0.0.1:{args.port}',f'localhost:{args.port}') and self.headers.get('Origin') in (None,f'http://127.0.0.1:{args.port}',f'http://localhost:{args.port}')
     def do_GET(self):
         if not self.allowed():return self.json({'error':'local origin required'},403)
-        path=urlparse(self.path).path
+        url=urlparse(self.path);path=url.path;query=parse_qs(url.query)
         if path=='/state':
-            with lock:return self.json(dict(seq=seq,**scene))
+            with lock:return self.json(dict(seq=seq,view=visible_view(),marks=[m for m in marks if not m['read']],**scene))
         if path=='/status':
-            with lock:return self.json(dict(version=2,seq=seq,objects=len(scene['objects']),clients=clients,receipts={str(k):v for k,v in list(receipts.items())[-200:]}))
+            with lock:return self.json(dict(version=2,seq=seq,objects=len(scene['objects']),view=visible_view(),clients=clients,receipts={str(k):v for k,v in list(receipts.items())[-200:]}))
+        if path=='/marks':
+            with lock:return self.json(dict(marks=take_marks(query.get('take',['1'])[0]!='0'),view=visible_view()))
         if path=='/events':
             self.send_response(200);self.send_header('Content-Type','text/event-stream');self.send_header('Cache-Control','no-cache');self.end_headers()
-            with lock:initial=dict(scene=copy.deepcopy(scene),seq=seq);cursor=seq
+            with lock:initial=dict(scene=copy.deepcopy(scene),seq=seq,marks=copy.deepcopy(marks));cursor=seq;marks_seen=marks_rev
             try:
                 self.wfile.write(('event: snapshot\ndata: '+json.dumps(initial)+'\n\n').encode());self.wfile.flush()
                 while True:
                     with lock:
+                        if not [e for e in events if e['seq']>cursor] and marks_seen==marks_rev:lock.wait(10)
                         batch=[e for e in events if e['seq']>cursor]
-                        if not batch:lock.wait(10);batch=[e for e in events if e['seq']>cursor]
-                    if not batch:self.wfile.write(b': heartbeat\n\n')
+                        marks_now=copy.deepcopy(marks) if marks_seen!=marks_rev else None;marks_seen=marks_rev
+                    if not batch and marks_now is None:self.wfile.write(b': heartbeat\n\n')
                     for e in batch:
                         self.wfile.write(('data: '+json.dumps(e)+'\n\n').encode());cursor=e['seq']
+                    if marks_now is not None:self.wfile.write(('event: marks\ndata: '+json.dumps(marks_now)+'\n\n').encode())
                     self.wfile.flush()
             except (BrokenPipeError,ConnectionResetError):pass
             return
@@ -122,21 +173,33 @@ class Handler(BaseHTTPRequestHandler):
                 (args.data/'browser-report.json').write_text(json.dumps(data,indent=2))
                 return self.json({'ok':True})
             if self.path=='/commands':return self.json(commit(data))
+            if self.path=='/marks':
+                with lock:
+                    if data.get('clear'):clear_marks();return self.json({'ok':True})
+                    if isinstance(data.get('update'),dict):return self.json(dict(ok=True,mark=note_mark(data['update'],data.get('note',''))))
+                    return self.json(dict(ok=True,mark=add_mark(data)))
             if self.path=='/ack':
                 with lock:
                     client=str(data['client'])[:120];stage=data['stage'];n=int(data['seq'])
-                    clients[client]={'seen':time.time()*1000,'seq':n,'stage':stage,'visible':data.get('visible',False)}
+                    view=data.get('view')
+                    if isinstance(view,dict):view={k:number(view[k],k) for k in ('cx','cy','zoom','w','h') if k in view}
+                    clients[client]={'seen':time.time()*1000,'seq':n,'stage':stage,'visible':data.get('visible',False),'view':view if view else clients.get(client,{}).get('view')}
                     if stage in ('firstFrame','done') and n in receipts:
                         timestamp=float(data['time'])
                         if not math.isfinite(timestamp):raise ValueError('invalid timestamp')
                         ms=timestamp-receipts[n]['accepted']
                         receipts[n].setdefault(client,{}).setdefault(stage+'Ms',round(ms,1))
-                    if stage in ('done','checkpoint') and n==seq and data.get('visible') and isinstance(data.get('positions'),dict):
-                        for i,p in data['positions'].items():
-                            if i in scene['objects']:
+                    if stage in ('done','checkpoint') and n==seq and data.get('visible'):
+                        changed=False
+                        for i,p in (data.get('positions') or {}).items():
+                            if i in scene['objects'] and isinstance(p,dict):
                                 for k in ('x','y','vx','vy'):
-                                    if k in p:scene['objects'][i][k]=number(p[k])
-                        persist()
+                                    if k in p:scene['objects'][i][k]=number(p[k]);changed=True
+                        for i,m in (data.get('measured') or {}).items():
+                            if i in scene['objects'] and isinstance(m,dict):
+                                clean={k:number(m[k],k) for k in ('w','h','contentW','contentH') if k in m};clean['overflow']=bool(m.get('overflow'))
+                                if scene['objects'][i].get('measured')!=clean:scene['objects'][i]['measured']=clean;changed=True
+                        if changed:persist()
                 return self.json({'ok':True})
             return self.json({'error':'not found'},404)
         except (ValueError,KeyError,TypeError,IndexError) as e:return self.json({'error':str(e)},400)

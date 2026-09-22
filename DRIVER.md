@@ -10,7 +10,24 @@ python3 /home/shayna/voice-whiteboard/boardctl.py open
 python3 /home/shayna/voice-whiteboard/boardctl.py state
 ```
 
-The page is http://127.0.0.1:8770. Start is idempotent; open once. `state` returns objects indexed by ID, templates, physics settings and sequence number. Coordinates are world pixels: x rightward, y downward. Shape x/y is the top-left; polygon/path points are relative offsets. Pan/zoom changes only the view.
+The page is http://127.0.0.1:8770. Start is idempotent; open once. `state` returns objects indexed by ID, templates, physics settings, sequence number, the human's current `view` and any unread `marks`. Coordinates are world pixels: x rightward, y downward. Shape x/y is the top-left; polygon/path points are relative offsets. Pan/zoom changes only the view.
+
+## Know what the human sees
+
+`state.view` is the visible tab's camera: `{"cx","cy","zoom","w","h"}` — world centre, zoom and the world-space width/height on screen. Anything outside `cx±w/2`, `cy±h/2` is off-screen for them. Move their camera with `view` (below) rather than guessing.
+
+Every card/code/text object carries a browser-reported `measured` field: `{"w","h","contentW","contentH","overflow"}`. Cards with no `height` grow to fit their text, so `overflow` is false. A card with an explicit `height` that is too small reports `overflow:true` with the height the content actually needs; the board also draws a red dashed outline. Fix it with `{"op":"set","select":"id","props":{"height":null}}` (null deletes a field, returning the card to auto-height) or a larger `width`. You never need a screenshot to know whether text fits.
+
+## Read the human's marks
+
+The human can point. In Point mode (button, `M`, or Alt-click) each click leaves a numbered mark — 1, 2, 3 — optionally with a typed note, on an object or on empty space. Marks are for you; they are not scene objects.
+
+```sh
+python3 /home/shayna/voice-whiteboard/boardctl.py marks          # returns unread marks and consumes them
+python3 /home/shayna/voice-whiteboard/boardctl.py marks --peek   # look without consuming
+```
+
+Each mark: `{"n":1,"batch":3,"x":…,"y":…,"target":"card-id"|null,"note":"…"}`. `target` is the object under the click (its root group if grouped). When the human says "link 1 and 2" or "move these to 3", read the marks and resolve the numbers. Consumed marks stay visible but dimmed until newer batches push them out, and numbering restarts at 1 for the next batch. Check `marks` whenever an instruction refers to "this", "these", "here" or a number you did not create.
 
 ## Send and confirm
 
@@ -46,7 +63,10 @@ Filters combine with AND: `ids`, `type`, `tag`, `roots:true`, then `fraction`, `
 | Throw | `{"op":"impulse","select":"assembly","velocity":[700,0]}` |
 | Pause physics | `{"op":"physics","props":{"enabled":false}}` |
 | Arrange | `{"op":"layout","select":{"roots":true},"mode":"grid","spacing":300,"duration":500}` |
-| Fit | `{"op":"fit"}` |
+| Fit everything | `{"op":"view","fit":true,"duration":300}` |
+| Fit some objects | `{"op":"view","fit":["a","b"]}` or `{"op":"view","fit":{"tag":"toml"}}` |
+| Look at a point | `{"op":"view","center":[400,-120],"zoom":1.2,"duration":400}` |
+| Pan | `{"op":"view","by":[300,0]}` |
 | Wait in sequence | `{"op":"wait","duration":200}` |
 | Undo / redo | `{"op":"undo"}` / `{"op":"redo"}` |
 
@@ -66,9 +86,11 @@ Original two-step test, compactly:
 
 Types: `dot`, `ellipse`, `rectangle`, `diamond`, `polygon`, `line`, `arrow`, `path`, `text`, `card`, `code`, `group`.
 
-Common fields: `id`, `type`, `x`, `y`, `width`, `height`, `color`, `fill`, `opacity`, `strokeWidth`, `tags`. Dot supports `radius`. Text/card/code supports `title`, `text`, `fontSize`; allocate width/height for long content. Text is literal; code preserves whitespace. This version has no image embeds, Markdown rendering or math typesetting.
+Common fields: `id`, `type`, `x`, `y`, `width`, `height`, `color`, `fill`, `opacity`, `strokeWidth`, `tags`. Dot supports `radius`. Text/card/code supports `title`, `text`, `fontSize`. Width defaults to 260 and text wraps inside it; omit `height` and the card grows to fit. Give `height` only when you want a fixed box, and read `measured.overflow` afterwards. Text is literal; code preserves whitespace. This version has no image embeds, Markdown rendering or math typesetting.
 
-Polygon/path use `points:[[x,y],...]`; path also accepts `closed:true`. Lines/arrows use two points or paired `from`/`to` IDs. Links attach to shapes/groups, not other links, and follow their endpoints, with optional `text` labels. Group `members` are IDs; move a group as one object. Each member has one parent. Removing a group removes its members; ungrouping preserves them. Deleting an endpoint removes its links.
+Polygon/path use `points:[[x,y],...]`; path also accepts `closed:true`. Lines/arrows use two or more points or paired `from`/`to` IDs. Links attach to shapes/groups, not other links, start and end on the shape boundary and follow their endpoints, with optional `text` labels. Group `members` are IDs; move a group as one object. Each member has one parent. Removing a group removes its members; ungrouping preserves them. Deleting an endpoint removes its links.
+
+Connections and point-lines take `route`: `straight` (default), `curve` (quadratic bend, `curve` sets the bend in pixels, negative bends the other way) or `elbow` (axis-aligned with one bend). Ends take `head` (at `to` / last point) and `tail` (at `from` / first point) from `none`, `arrow` (filled), `open` (chevron), `dot`, `diamond`, `bar`. `arrow:true` on `link` is shorthand for `head:"arrow"`. Examples: a dependency `{"head":"arrow"}`, an association `{"head":"none"}`, a bidirectional flow `{"head":"arrow","tail":"arrow"}`, composition `{"tail":"diamond"}`, an inhibitor `{"head":"bar"}`.
 
 ## Behavior vocabulary
 

@@ -43,5 +43,21 @@ class ModelTests(unittest.TestCase):
     def test_one_endpoint_rejected(self):
         self.dots()
         with self.assertRaises(ValueError):self.runop(op='create',object={'id':'bad','type':'line','from':'d-0'})
+    def test_view_requires_a_target_and_resolves_fit_selection(self):
+        self.dots()
+        with self.assertRaises(ValueError):self.runop(op='view')
+        with self.assertRaises(ValueError):self.runop(op='view',zoom=50)
+        self.assertEqual(self.runop(op='view',fit={'type':'dot','limit':2}),['d-0','d-1'])
+        self.assertEqual(self.runop(op='view',center=[10,20],zoom=2),[])
+    def test_link_heads_and_routes_validated(self):
+        self.dots();self.runop(op='link',id='e',arrow=True,props={'route':'curve','tail':'dot'},**{'from':'d-0','to':'d-1'})
+        self.assertEqual(self.s['objects']['e']['head'],'arrow')
+        with self.assertRaises(ValueError):self.runop(op='set',select='e',props={'head':'zigzag'})
+        with self.assertRaises(ValueError):self.runop(op='set',select='e',props={'route':'teleport'})
+    def test_set_null_deletes_a_field_and_measured_is_read_only(self):
+        self.runop(op='create',object={'id':'c','type':'card','height':300});self.runop(op='set',select='c',props={'height':None})
+        self.assertNotIn('height',self.s['objects']['c'])
+        with self.assertRaises(ValueError):self.runop(op='set',select='c',props={'measured':{'h':1}})
+        with self.assertRaises(ValueError):self.runop(op='create',object={'id':'m','type':'dot','measured':{'h':1}})
 
 if __name__=='__main__':unittest.main()

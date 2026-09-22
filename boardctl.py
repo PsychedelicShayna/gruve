@@ -12,9 +12,10 @@ import urllib.error
 ROOT=Path(__file__).parent
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--port',type=int,default=8770)
-p.add_argument('action',choices=['start','send','state','status','open'])
+p.add_argument('action',choices=['start','send','state','status','open','marks'])
 p.add_argument('json',nargs='?')
 p.add_argument('--wait',action='store_true',help='wait for a browser completion acknowledgment, up to 10 seconds')
+p.add_argument('--peek',action='store_true',help='marks: list unread marks without consuming them')
 a=p.parse_args();url=f'http://127.0.0.1:{a.port}'
 def get(path):return json.load(urllib.request.urlopen(url+path,timeout=2))
 try:
@@ -32,6 +33,7 @@ try:
         print(json.dumps({'url':url,'version':status['version'],'objects':status['objects']}))
     elif a.action=='open':subprocess.run(['xdg-open',url],check=True)
     elif a.action in ('state','status'):print(json.dumps(get('/'+a.action)))
+    elif a.action=='marks':print(json.dumps(get('/marks?take='+('0' if a.peek else '1'))))
     else:
         payload=json.loads(a.json if a.json else sys.stdin.read())
         body=json.dumps(payload).encode()

@@ -1,3 +1,15 @@
+# Verification, 2026-09-22 (v1.1)
+
+- 17 Python model tests (+3): `view` targets and fit selection, link `head`/`route` validation, `set` null-deletes and read-only `measured`.
+- 14 JavaScript engine tests (+5): measured-height bounds, boundary edge points on rectangles and ellipses, elbow routing shape, head trims.
+- Headless Chromium against an isolated server on port 8791 with `/tmp/vwtest` data:
+  - Six head styles and three routes render; links start/end on shape boundaries and re-route when an endpoint is resized.
+  - A card without `height` grew to 205 px for its text; a 90 px card holding 163 px of text was outlined red and reported `measured.overflow:true` in `/state`.
+  - Corner-handle drag resized a card 260×90 → 296×197, persisted through `set`, and cleared the overflow flag; `set height:null` returned it to auto-height (measured h 163).
+  - Point mode: three clicks produced marks 1 (target `a`), 2 (target `c`), 3 (free, note "here"); `boardctl.py marks` returned and consumed them; the overlay dimmed them.
+  - `view center/zoom` and `view fit:[ids]` moved the camera; `/state.view` reported the visible client's world rectangle.
+- Limitation noted: the harness's idle headless tab stops `requestAnimationFrame`, so interactive checks must run within one live navigation. The board itself is unaffected.
+
 # Verification, 2026-09-20
 
 ## Completed

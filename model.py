@@ -4,8 +4,10 @@ import math
 import random
 
 TYPES = {'dot','ellipse','rectangle','diamond','polygon','line','arrow','text','card','code','path','group'}
-NUMBERS = {'x','y','width','height','radius','fontSize','strokeWidth','opacity','mass','vx','vy','rest','strength'}
-FIELDS = NUMBERS | {'id','type','title','text','color','fill','points','tags','members','from','to','pinned','body','closed','outline'}
+NUMBERS = {'x','y','width','height','radius','fontSize','strokeWidth','opacity','mass','vx','vy','rest','strength','curve'}
+HEADS = {'none','arrow','open','dot','diamond','bar'}
+ROUTES = {'straight','curve','elbow'}
+FIELDS = NUMBERS | {'id','type','title','text','color','fill','points','tags','members','from','to','pinned','body','closed','outline','head','tail','route','measured'}
 DEFAULT_PHYSICS = dict(enabled=False, repulsion=1200, center=0.02, damping=0.9, collision=True, bounce=0.45)
 
 def fresh():
@@ -32,6 +34,10 @@ def validate_object(o):
         if k in o and (not isinstance(o[k],str) or len(o[k])>20000): raise ValueError(k+' must be text')
     for k in ('pinned','body','closed','outline'):
         if k in o and not isinstance(o[k],bool): raise ValueError(k+' must be boolean')
+    for k in ('head','tail'):
+        if k in o and o[k] not in HEADS: raise ValueError(k+' must be one of '+', '.join(sorted(HEADS)))
+    if 'route' in o and o['route'] not in ROUTES: raise ValueError('route must be one of '+', '.join(sorted(ROUTES)))
+    if 'measured' in o and not isinstance(o['measured'],dict): raise ValueError('measured is reported by the browser, not set')
     for k in ('tags','members'):
         if k in o and (not isinstance(o[k],list) or not all(isinstance(v,str) for v in o[k])): raise ValueError(k+' must be a string array')
     if 'points' in o:
@@ -95,13 +101,14 @@ def operation(scene,c):
     """Mutates a private candidate; caller commits only after all validation passes."""
     if not isinstance(c,dict): raise ValueError('command must be an object')
     op=c.get('op'); objs=scene['objects']; selected=[]
-    allowed={'create','set','remove','move','group','ungroup','link','animate','impulse','physics','layout','fit','wait','clear','define','spawn'}
+    allowed={'create','set','remove','move','group','ungroup','link','animate','impulse','physics','layout','fit','view','wait','clear','define','spawn'}
     if op not in allowed: raise ValueError('unknown op '+str(op))
     for key in ('duration','stagger'):
         v=number(c.get(key,0),key)
         if not 0<=v<=10000: raise ValueError(key+' must be 0..10000 milliseconds')
     def add(o):
         o={'x':0,'y':0,**copy.deepcopy(o)}
+        if 'measured' in o: raise ValueError('measured is reported by the browser, not set')
         if o.get('id') in objs: raise ValueError('duplicate id '+o['id'])
         validate_object(o);objs[o['id']]=o;selected.append(o['id'])
     if op=='create':
@@ -142,7 +149,20 @@ def operation(scene,c):
             add(n)
         add(dict(id=prefix,type='group',x=x,y=y,members=[prefix+'/'+o['id'] for o in items if o['id'] not in owned],outline=False,body=c.get('body',False)))
     elif op=='link':
-        add({**c.get('props',{}),'id':c.get('id'),'type':'arrow' if c.get('arrow',False) else 'line','from':c.get('from'),'to':c.get('to')})
+        props=c.get('props',{})
+        if not isinstance(props,dict): raise ValueError('link props must be an object')
+        head={'head':'arrow'} if c.get('arrow',False) else {}
+        add({**head,**props,'id':c.get('id'),'type':'arrow' if c.get('arrow',False) else 'line','from':c.get('from'),'to':c.get('to')})
+    elif op=='view':
+        if 'center' in c:
+            if not isinstance(c['center'],list) or len(c['center'])!=2: raise ValueError('view center must be [x,y]')
+            for v in c['center']: number(v,'center')
+        if 'by' in c:
+            if not isinstance(c['by'],list) or len(c['by'])!=2: raise ValueError('view by must be [dx,dy]')
+            for v in c['by']: number(v,'by')
+        if 'zoom' in c and not 0.05<=number(c['zoom'],'zoom')<=8: raise ValueError('zoom must be 0.05..8')
+        if 'fit' in c and c['fit'] is not True: selected=select(scene,c['fit'])
+        if not {'center','by','zoom','fit'}&set(c): raise ValueError('view needs center, by, zoom or fit')
     elif op=='physics':
         props=c.get('props',{})
         if set(props)-set(DEFAULT_PHYSICS): raise ValueError('unknown physics property')
@@ -159,8 +179,11 @@ def operation(scene,c):
         selected=select(scene,c.get('select'))
         if op in ('set','animate'):
             props=c.get('props',{})
-            if not isinstance(props,dict) or set(props)&{'id','type','members','x','y'}: raise ValueError('set/animate cannot change identity, membership or position; use move/group')
-            for i in selected:objs[i].update(copy.deepcopy(props))
+            if not isinstance(props,dict) or set(props)&{'id','type','members','x','y','measured'}: raise ValueError('set/animate cannot change identity, membership, position or measurements; use move/group')
+            for i in selected:
+                for k,v in props.items():
+                    if v is None: objs[i].pop(k,None)
+                    else: objs[i][k]=copy.deepcopy(v)
         elif op=='move':
             if 'to' in c and len(selected)!=1: raise ValueError('move to requires exactly one selected object; use by for many')
             delta=c.get('by')

@@ -12,7 +12,61 @@ export function bounds(o, objects) {
   if(['line','arrow','path'].includes(o.type)&&!o.points)return {x,y,w:120,h:1};
   if(o.points?.length){const xs=o.points.map(p=>p[0]),ys=o.points.map(p=>p[1]);return {x:x+Math.min(...xs),y:y+Math.min(...ys),w:Math.max(...xs)-Math.min(...xs)||1,h:Math.max(...ys)-Math.min(...ys)||1};}
   const size=o.radius?o.radius*2:16;
-  return {x,y,w:o.width||(o.type==='dot'?size:260),h:o.height||(o.type==='dot'?size:140)};
+  return {x,y,w:o.width||(o.type==='dot'?size:260),h:o.height||(o.type==='dot'?size:(o.measured?.h||140))};
+}
+// Point on the boundary of o's box (or ellipse) along the ray from its centre towards `target`.
+export function edgePoint(o,objects,target){
+  const b=bounds(o,objects),cx=b.x+b.w/2,cy=b.y+b.h/2,dx=target.x-cx,dy=target.y-cy;
+  if(Math.abs(dx)<1e-6&&Math.abs(dy)<1e-6)return {x:cx,y:cy};
+  if(o.type==='dot'||o.type==='ellipse'){
+    const rx=b.w/2,ry=b.h/2,t=1/Math.sqrt((dx*dx)/(rx*rx)+(dy*dy)/(ry*ry));
+    return {x:cx+dx*t,y:cy+dy*t};
+  }
+  const tx=dx?Math.abs((b.w/2)/dx):Infinity,ty=dy?Math.abs((b.h/2)/dy):Infinity,t=Math.min(tx,ty);
+  return {x:cx+dx*t,y:cy+dy*t};
+}
+const centre=(o,objects)=>{const b=bounds(o,objects);return {x:b.x+b.w/2,y:b.y+b.h/2};};
+// Polyline (or quadratic) for a connection between two objects. Returns {points, control, start, end, tangentStart, tangentEnd}.
+export function route(link,objects){
+  const a=objects.get(link.from),b=objects.get(link.to);
+  if(!a||!b)return null;
+  const ca=centre(a,objects),cb=centre(b,objects),mode=link.route||'straight';
+  if(mode==='elbow'){
+    const ba=bounds(a,objects),bb=bounds(b,objects),dx=cb.x-ca.x,dy=cb.y-ca.y;
+    let pts;
+    if(Math.abs(dx)>=Math.abs(dy)){
+      const sx=dx>=0?ba.x+ba.w:ba.x,ex=dx>=0?bb.x:bb.x+bb.w,mx=(sx+ex)/2;
+      pts=[{x:sx,y:ca.y},{x:mx,y:ca.y},{x:mx,y:cb.y},{x:ex,y:cb.y}];
+    }else{
+      const sy=dy>=0?ba.y+ba.h:ba.y,ey=dy>=0?bb.y:bb.y+bb.h,my=(sy+ey)/2;
+      pts=[{x:ca.x,y:sy},{x:ca.x,y:my},{x:cb.x,y:my},{x:cb.x,y:ey}];
+    }
+    return {points:pts,start:pts[0],end:pts[3],tangentStart:unit(pts[0],pts[1]),tangentEnd:unit(pts[2],pts[3])};
+  }
+  if(mode==='curve'){
+    const d=Math.hypot(cb.x-ca.x,cb.y-ca.y)||1,bend=link.curve??Math.min(80,d*.25),nx=-(cb.y-ca.y)/d,ny=(cb.x-ca.x)/d;
+    const control={x:(ca.x+cb.x)/2+nx*bend,y:(ca.y+cb.y)/2+ny*bend};
+    const start=edgePoint(a,objects,control),end=edgePoint(b,objects,control);
+    return {points:[start,end],control,start,end,tangentStart:unit(start,control),tangentEnd:unit(control,end)};
+  }
+  const start=edgePoint(a,objects,cb),end=edgePoint(b,objects,ca);
+  return {points:[start,end],start,end,tangentStart:unit(start,end),tangentEnd:unit(start,end)};
+}
+function unit(p,q){const dx=q.x-p.x,dy=q.y-p.y,d=Math.hypot(dx,dy)||1;return {x:dx/d,y:dy/d};}
+// Geometry for one arrowhead whose tip is at `tip`, pointing along unit `dir`. `size` in world px.
+// Returns {shapes:[{tag,attrs,filled}], trim} where trim is how far to shorten the line before the tip.
+export function headGeometry(kind,tip,dir,size){
+  const nx=-dir.y,ny=dir.x,back={x:tip.x-dir.x*size,y:tip.y-dir.y*size},pt=(p)=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+  const wing=(k)=>({x:back.x+nx*size*k,y:back.y+ny*size*k});
+  switch(kind){
+    case 'arrow':return {trim:size*.85,shapes:[{tag:'polygon',filled:true,attrs:{points:[tip,wing(.42),wing(-.42)].map(pt).join(' ')}}]};
+    case 'open':return {trim:0,shapes:[{tag:'polyline',filled:false,attrs:{points:[wing(.45),tip,wing(-.45)].map(pt).join(' ')}}]};
+    case 'dot':{const r=size*.42,c={x:tip.x-dir.x*r,y:tip.y-dir.y*r};return {trim:r*2,shapes:[{tag:'circle',filled:true,attrs:{cx:c.x,cy:c.y,r}}]};}
+    case 'diamond':{const mid={x:tip.x-dir.x*size*.55,y:tip.y-dir.y*size*.55},far={x:tip.x-dir.x*size*1.1,y:tip.y-dir.y*size*1.1};
+      return {trim:size*1.05,shapes:[{tag:'polygon',filled:true,attrs:{points:[tip,{x:mid.x+nx*size*.4,y:mid.y+ny*size*.4},far,{x:mid.x-nx*size*.4,y:mid.y-ny*size*.4}].map(pt).join(' ')}}]};}
+    case 'bar':return {trim:0,shapes:[{tag:'line',filled:false,attrs:{x1:tip.x+nx*size*.5,y1:tip.y+ny*size*.5,x2:tip.x-nx*size*.5,y2:tip.y-ny*size*.5}}]};
+    default:return {trim:0,shapes:[]};
+  }
 }
 export function translate(id,dx,dy,objects,seen=new Set()) {
   if(seen.has(id))return;seen.add(id);const o=objects.get(id);if(!o)return;
