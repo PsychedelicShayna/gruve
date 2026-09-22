@@ -7,7 +7,8 @@ const objects=new Map(),elements=new Map(),measures=new Map(),selected=new Set()
 let physics={},seq=0,running=false,dirty=true,epoch=0,drag=null,editorId=null,fitOnLoad=true,checkpointAt=0;
 let marks=[],pointMode=false,noteTarget=null,cameraAnimation=null;
 const client=crypto.randomUUID();
-const view=JSON.parse(sessionStorage.getItem('idea-board-view')||'null')||{x:innerWidth/2,y:innerHeight/2,z:1};
+const storedView=JSON.parse(sessionStorage.getItem('idea-board-view')||'null');
+const view=storedView||{x:innerWidth/2,y:innerHeight/2,z:1};
 const marksLayer=svg('g',{id:'marks',class:'marks'});
 const BATCH_COLORS=['#6ee7a0','#ff7a7a','#7ab8ff','#c98bff','#ffb35c'];
 
@@ -173,7 +174,7 @@ function drawHandle(){
   if(selected.size!==1)return;
   const id=[...selected][0],o=objects.get(id),g=elements.get(id);
   if(!o||!g||o.from||['group','dot','line','arrow','path','polygon'].includes(o.type))return;
-  const b=bounds(o,objects),s=12/view.z;
+  const b=bounds(o,objects),s=16/view.z;
   g.append(svg('rect',{class:'handle',x:b.w-s/2,y:b.h-s/2,width:s,height:s,rx:s/4,'data-handle':id}));
 }
 function drawMarks(){
@@ -284,7 +285,7 @@ stream.addEventListener('snapshot',e=>{
   objects.clear();for(const [id,o] of Object.entries(data.scene.objects))objects.set(id,o);
   physics=data.scene.physics;seq=data.seq;marks=data.marks||[];
   dirty=true;render();
-  if(fitOnLoad){fit();fitOnLoad=false;}
+  if(fitOnLoad){if(!storedView)fit();fitOnLoad=false;}
   ack('snapshot',seq);
 });
 stream.addEventListener('marks',e=>{marks=JSON.parse(e.data);drawMarks();});
@@ -312,7 +313,7 @@ function positionNoteInput(){
 function showNoteInput(mark){
   noteTarget=mark;const input=$('mark-note');input.value='';input.hidden=false;positionNoteInput();input.focus();
 }
-function hideNoteInput(){$('mark-note').hidden=true;noteTarget=null;}
+function hideNoteInput(){const input=$('mark-note');input.hidden=true;noteTarget=null;input.blur();}
 async function commitNote(){
   const input=$('mark-note'),mark=noteTarget;if(!mark)return;
   const note=input.value.trim();hideNoteInput();
@@ -377,7 +378,9 @@ canvas.onwheel=e=>{
   view.x=e.clientX-(e.clientX-view.x)*z/view.z;view.y=e.clientY-(e.clientY-view.y)*z/view.z;view.z=z;transform();
 };
 canvas.ondblclick=e=>{
-  const id=e.target.closest('[data-id]')?.dataset.id,o=objects.get(id);if(!o)return;
+  // Pointer capture retargets dblclick to the canvas, so hit-test by position.
+  const hit=document.elementFromPoint(e.clientX,e.clientY);
+  const id=hit?.closest('[data-id]')?.dataset.id,o=objects.get(id);if(!o)return;
   editorId=id;$('guide').hidden=false;$('editor').hidden=false;
   $('title').value=o.title||'';$('text').value=o.text||'';$('selection').textContent=id;$('title').focus();
 };
