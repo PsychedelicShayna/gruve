@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voice board</title>
+  <style>
+    :root { color-scheme: dark; --ink:#e9edf2; --muted:#8993a3; --line:#354052; --accent:#8bb9ff; --danger:#ff6b78; --paper:#11151c; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#090c11; color:var(--ink); font:14px/1.42 Inter, ui-sans-serif, system-ui, sans-serif; }
+    button, input, textarea, select { font:inherit; }
+    #app { width:100%; height:100%; position:relative; background:radial-gradient(circle at 50% 45%, #151b25 0, #0b0f15 48%, #07090d 100%); }
+    #viewport { position:absolute; inset:0; overflow:hidden; cursor:grab; }
+    #viewport.panning { cursor:grabbing; }
+    #world { position:absolute; width:1px; height:1px; transform-origin:0 0; }
+    #edges { position:absolute; overflow:visible; width:1px; height:1px; pointer-events:none; }
+    .edge { stroke:var(--line); stroke-width:2; fill:none; }
+    .edge.conflict { stroke:var(--danger); stroke-dasharray:7 6; }
+    .edge-label { fill:#8f9bac; font-size:12px; text-anchor:middle; paint-order:stroke; stroke:#0b0f15; stroke-width:5px; }
+    #nodes { position:absolute; inset:0; }
+    .node { position:absolute; width:260px; min-height:110px; border:1px solid #39465a; border-radius:14px; background:linear-gradient(150deg,rgba(31,39,52,.97),rgba(19,24,33,.98)); box-shadow:0 14px 35px rgba(0,0,0,.35); user-select:none; overflow:hidden; }
+    .node.selected { outline:2px solid var(--accent); outline-offset:3px; }
+    .node.dot { width:14px; height:14px; min-height:0; border-radius:50%; border:0; background:#9bbdff; box-shadow:0 0 18px #799fff66; cursor:move; }
+    .node.dot .node-head,.node.dot .body { display:none; }
+    .node.definition { border-color:#566987; }
+    .node.toml { border-color:#586f68; }
+    .node.question, .node.conflict { border-color:#a94d58; background:linear-gradient(150deg,rgba(67,29,38,.98),rgba(31,19,25,.98)); }
+    .node-head { display:flex; gap:9px; align-items:center; padding:11px 13px 8px; cursor:move; }
+    .kind { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 12px currentColor; }
+    .definition .kind { background:#a7bfe8; }.toml .kind{background:#8dd8b4}.question .kind,.conflict .kind{background:var(--danger)}
+    .title { font-weight:700; letter-spacing:.01em; flex:1; }
+    .remove { border:0; background:none; color:#778294; font-size:18px; padding:0 3px; cursor:pointer; }
+    .remove:hover { color:#fff; }
+    .body { padding:2px 13px 13px; color:#c8d0dc; white-space:pre-wrap; user-select:text; }
+    .toml .body { font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; color:#bde7d3; }
+    .group { position:absolute; border:2px dashed #6b7483; border-radius:22px; pointer-events:none; }
+    .group.conflict { border-color:var(--danger); background:rgba(255,65,83,.035); }
+    .group-label { position:absolute; left:16px; top:-12px; padding:2px 9px; border-radius:9px; background:#11151c; color:#aeb7c4; font-size:12px; }
+    .group.conflict .group-label { color:#ff9aa4; }
+    header { position:absolute; z-index:20; left:18px; right:18px; top:16px; display:flex; align-items:center; gap:10px; pointer-events:none; }
+    .brand { pointer-events:auto; padding:8px 12px; background:rgba(12,16,22,.82); border:1px solid #273140; border-radius:12px; backdrop-filter:blur(12px); }
+    .brand b { letter-spacing:.025em; } .brand span { color:var(--muted); margin-left:8px; font-size:12px; }
+    .toolbar { margin-left:auto; pointer-events:auto; display:flex; gap:7px; padding:6px; background:rgba(12,16,22,.82); border:1px solid #273140; border-radius:13px; backdrop-filter:blur(12px); }
+    .toolbar button { border:1px solid #344052; color:#cad2df; background:#171d27; border-radius:9px; padding:6px 10px; cursor:pointer; }
+    .toolbar button:hover { background:#222b39; color:#fff; }
+    #inspector { position:absolute; z-index:30; right:18px; bottom:18px; width:310px; padding:13px; background:rgba(12,16,22,.94); border:1px solid #2b3646; border-radius:14px; box-shadow:0 15px 40px rgba(0,0,0,.38); display:none; }
+    #inspector.open { display:block; }
+    #inspector label { display:block; color:var(--muted); font-size:11px; margin:8px 0 4px; text-transform:uppercase; letter-spacing:.08em; }
+    #inspector input,#inspector textarea,#inspector select { width:100%; color:var(--ink); background:#111721; border:1px solid #344052; border-radius:8px; padding:8px; outline:none; }
+    #inspector textarea { resize:vertical; min-height:90px; }
+    #inspector .row { display:flex; gap:8px; margin-top:10px; }
+    #inspector button { flex:1; border:0; border-radius:8px; padding:8px; background:#7aa8ed; color:#08101b; font-weight:700; cursor:pointer; }
+    #inspector button.secondary { background:#252e3b; color:#bdc6d3; }
+    #hint { position:absolute; z-index:20; bottom:18px; left:20px; color:#667181; font-size:12px; pointer-events:none; }
+    @media (max-width:650px){ .brand span{display:none}.toolbar button:nth-child(3){display:none}#inspector{left:12px;right:12px;width:auto}.node{width:220px} }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="viewport" aria-label="Draggable idea canvas">
+    <div id="world"><svg id="edges"></svg><div id="groups"></div><div id="nodes"></div></div>
+  </div>
+  <header><div class="brand"><b>VOICE BOARD</b><span>TOML schema workspace</span></div><div class="toolbar"><button id="add">+ node</button><button id="connect">connect</button><button id="fit">fit board</button></div></header>
+  <div id="inspector">
+    <label for="edit-title">Title</label><input id="edit-title">
+    <label for="edit-kind">Kind</label><select id="edit-kind"><option>idea</option><option>definition</option><option>toml</option><option>question</option><option>conflict</option></select>
+    <label for="edit-body">Content</label><textarea id="edit-body"></textarea>
+    <div class="row"><button id="save">save</button><button id="cancel" class="secondary">close</button></div>
+  </div>
+  <div id="hint">drag nodes · drag empty space to pan · wheel to zoom · double-click empty space to add</div>
+</div>
+<script>
+(() => {
+  const key='voice-board-v1';
+  const initial={
+    nodes:[
+      {id:'schema',title:'Schema',body:'A contract for which values exist, how they are shaped, and what they mean.',kind:'definition',x:-180,y:-120},
+      {id:'toml',title:'TOML representation',body:'[schema]\nname = "example"\nversion = 1',kind:'toml',x:160,y:-95},
+      {id:'question',title:'What must remain true?',body:'Start with the invariant, then decide whether TOML can express it directly.',kind:'question',x:-10,y:120}
+    ],
+    edges:[{id:'e1',from:'schema',to:'toml',label:'encoded as',kind:'normal'},{id:'e2',from:'schema',to:'question',label:'constrains',kind:'normal'}],
+    groups:[], view:{x:innerWidth/2,y:innerHeight/2,scale:1}
+  };
+  let state; try{state=JSON.parse(localStorage.getItem(key))||initial}catch{state=initial}
+  const $=s=>document.querySelector(s), viewport=$('#viewport'), world=$('#world'), nodesEl=$('#nodes'), edgesEl=$('#edges'), groupsEl=$('#groups');
+  let selected=null, connectFrom=null, editing=null, drag=null, pan=null;
+  const uid=p=>p+Math.random().toString(36).slice(2,8);
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function persist(){localStorage.setItem(key,JSON.stringify(state));}
+  function applyView(){world.style.transform=`translate(${state.view.x}px,${state.view.y}px) scale(${state.view.scale})`;}
+  function render(){
+    nodesEl.innerHTML=state.nodes.map(n=>`<article class="node ${esc(n.kind)} ${selected===n.id?'selected':''}" data-id="${esc(n.id)}" style="transform:translate(${n.x}px,${n.y}px)"><div class="node-head"><i class="kind"></i><div class="title">${esc(n.title)}</div><button class="remove" title="Remove">×</button></div><div class="body">${esc(n.body)}</div></article>`).join('');
+    groupsEl.innerHTML=state.groups.map(g=>{const ns=g.nodes.map(id=>state.nodes.find(n=>n.id===id)).filter(Boolean);if(!ns.length)return'';const xs=ns.map(n=>n.x),ys=ns.map(n=>n.y),x=Math.min(...xs)-30,y=Math.min(...ys)-35,w=Math.max(...xs)+260-x+30,h=Math.max(...ys)+Math.max(...ns.map(n=>nodeHeight(n.id)))-y+30;return`<div class="group ${esc(g.kind)}" style="transform:translate(${x}px,${y}px);width:${w}px;height:${h}px"><span class="group-label">${esc(g.label)}</span></div>`}).join('');
+    edgesEl.innerHTML=state.edges.map(e=>{const a=state.nodes.find(n=>n.id===e.from),b=state.nodes.find(n=>n.id===e.to);if(!a||!b)return'';const x1=a.x+130,y1=a.y+nodeHeight(a.id)/2,x2=b.x+130,y2=b.y+nodeHeight(b.id)/2,mx=(x1+x2)/2,my=(y1+y2)/2;return`<path class="edge ${e.kind==='conflict'?'conflict':''}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/><text class="edge-label" x="${mx}" y="${my-7}">${esc(e.label)}</text>`}).join('');
+    applyView(); persist();
+  }
+  function nodeHeight(id){return document.querySelector(`[data-id="${CSS.escape(id)}"]`)?.offsetHeight||120}
+  function addNode(node={}){const id=node.id||uid('n');state.nodes.push({id,title:node.title||'New idea',body:node.body||'',kind:node.kind||'idea',x:node.x??(-state.view.x+innerWidth/2)/state.view.scale-130,y:node.y??(-state.view.y+innerHeight/2)/state.view.scale-60});render();return id}
+  function removeNode(id){state.nodes=state.nodes.filter(n=>n.id!==id);state.edges=state.edges.filter(e=>e.from!==id&&e.to!==id);state.groups=state.groups.map(g=>({...g,nodes:g.nodes.filter(n=>n!==id)})).filter(g=>g.nodes.length);if(selected===id)selected=null;render()}
+  function updateNode(id,patch){const n=state.nodes.find(n=>n.id===id);if(n)Object.assign(n,patch);render();return n}
+  function link(from,to,label='',kind='normal'){const id=uid('e');state.edges.push({id,from,to,label,kind});render();return id}
+  function group(nodeIds,label='related',kind='normal'){const id=uid('g');state.groups.push({id,nodes:nodeIds,label,kind});render();return id}
+  function clear(){state={nodes:[],edges:[],groups:[],view:{x:innerWidth/2,y:innerHeight/2,scale:1}};selected=null;render()}
+  function fit(){if(!state.nodes.length)return;const minX=Math.min(...state.nodes.map(n=>n.x)),maxX=Math.max(...state.nodes.map(n=>n.x+260)),minY=Math.min(...state.nodes.map(n=>n.y)),maxY=Math.max(...state.nodes.map(n=>n.y+nodeHeight(n.id)));const scale=Math.min(.95,(innerWidth-80)/(maxX-minX),(innerHeight-100)/(maxY-minY));state.view.scale=Math.max(.3,Math.min(1.35,scale));state.view.x=(innerWidth-(minX+maxX)*state.view.scale)/2;state.view.y=(innerHeight-(minY+maxY)*state.view.scale)/2;render()}
+  function openEditor(id){editing=id;const n=state.nodes.find(n=>n.id===id);if(!n)return;$('#edit-title').value=n.title;$('#edit-kind').value=n.kind;$('#edit-body').value=n.body;$('#inspector').classList.add('open');$('#edit-title').focus()}
+  nodesEl.addEventListener('pointerdown',e=>{const el=e.target.closest('.node');if(!el)return;const id=el.dataset.id;if(e.target.closest('.remove')){removeNode(id);return}selected=id;render();if(connectFrom){if(connectFrom!==id)link(connectFrom,id,'relates to');connectFrom=null;return}const n=state.nodes.find(n=>n.id===id);drag={id,sx:e.clientX,sy:e.clientY,x:n.x,y:n.y};el.setPointerCapture(e.pointerId)});
+  nodesEl.addEventListener('pointermove',e=>{if(!drag)return;const n=state.nodes.find(n=>n.id===drag.id);n.x=drag.x+(e.clientX-drag.sx)/state.view.scale;n.y=drag.y+(e.clientY-drag.sy)/state.view.scale;render()});
+  nodesEl.addEventListener('pointerup',()=>drag=null); nodesEl.addEventListener('dblclick',e=>{const el=e.target.closest('.node');if(el)openEditor(el.dataset.id)});
+  viewport.addEventListener('pointerdown',e=>{if(e.target!==viewport&&e.target!==world&&e.target!==nodesEl)return;pan={sx:e.clientX,sy:e.clientY,x:state.view.x,y:state.view.y};viewport.classList.add('panning');viewport.setPointerCapture(e.pointerId)});
+  viewport.addEventListener('pointermove',e=>{if(!pan)return;state.view.x=pan.x+e.clientX-pan.sx;state.view.y=pan.y+e.clientY-pan.sy;applyView()});
+  viewport.addEventListener('pointerup',()=>{pan=null;viewport.classList.remove('panning');persist()});
+  viewport.addEventListener('wheel',e=>{e.preventDefault();const old=state.view.scale,next=Math.max(.25,Math.min(2,old*Math.exp(-e.deltaY*.001)));state.view.x=e.clientX-(e.clientX-state.view.x)*next/old;state.view.y=e.clientY-(e.clientY-state.view.y)*next/old;state.view.scale=next;applyView();persist()},{passive:false});
+  viewport.addEventListener('dblclick',e=>{if(e.target.closest('.node'))return;const id=addNode({x:(e.clientX-state.view.x)/state.view.scale-130,y:(e.clientY-state.view.y)/state.view.scale-55});openEditor(id)});
+  $('#add').onclick=()=>openEditor(addNode()); $('#fit').onclick=fit; $('#connect').onclick=()=>{if(selected){connectFrom=selected;$('#connect').textContent='select target'}else alert('Select a node first')};
+  $('#save').onclick=()=>{updateNode(editing,{title:$('#edit-title').value,kind:$('#edit-kind').value,body:$('#edit-body').value});$('#inspector').classList.remove('open')};
+  $('#cancel').onclick=()=>$('#inspector').classList.remove('open');
+  addEventListener('keydown',e=>{if((e.key==='Delete'||e.key==='Backspace')&&selected&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName))removeNode(selected);if(e.key==='Escape'){$('#inspector').classList.remove('open');connectFrom=null}});
+  addEventListener('resize',()=>applyView());
+  window.ideaBoard={add:addNode,remove:removeNode,update:updateNode,link,group,clear,fit,getState:()=>structuredClone(state),setState:s=>{state=s;render()},focus:id=>{const n=state.nodes.find(n=>n.id===id);if(n){state.view.x=innerWidth/2-(n.x+130)*state.view.scale;state.view.y=innerHeight/2-(n.y+60)*state.view.scale;selected=id;render()}}};
+  render(); setTimeout(fit,50);
+  window.applyBoardUpdate = packet => {
+    if(localStorage.getItem('voice-board-command')===packet.id)return;
+    packet.run(window.ideaBoard);
+    localStorage.setItem('voice-board-command',packet.id);
+  };
+  function pollBoard(){
+    const script=document.createElement('script');
+    script.src='./commands.js?t='+Date.now();
+    script.onload=script.onerror=()=>script.remove();
+    document.head.appendChild(script);
+  }
+  pollBoard(); setInterval(pollBoard,800);
+})();
+</script>
+</body>
+</html>

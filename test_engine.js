@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {bounds,translate,stepPhysics,interpolate} from './engine.js';
+const settings={enabled:true,repulsion:0,center:0,damping:1,collision:false,bounce:.5};
+test('compound translates children exactly once',()=>{const m=new Map([['a',{id:'a',type:'dot',x:0,y:0}],['g',{id:'g',type:'group',x:0,y:0,members:['a']}]]);translate('g',30,20,m);assert.equal(m.get('a').x,30);assert.equal(bounds(m.get('g'),m).x,30);});
+test('pinned body stays fixed',()=>{const m=new Map([['a',{id:'a',type:'dot',x:0,y:0,body:true,pinned:true,vx:100}]]);stepPhysics(m,settings,.02);assert.equal(m.get('a').x,0);});
+test('impulse advances unpinned body',()=>{const m=new Map([['a',{id:'a',type:'dot',x:0,y:0,body:true,vx:100}]]);stepPhysics(m,settings,.02);assert.equal(m.get('a').x,2);});
+test('spring pulls apart nodes together',()=>{const m=new Map([['a',{id:'a',type:'dot',x:0,y:0,body:true}],['b',{id:'b',type:'dot',x:300,y:0,body:true}],['e',{id:'e',type:'line',from:'a',to:'b',rest:100,strength:2}]]);stepPhysics(m,settings,.02);assert.ok(m.get('a').vx>0);assert.ok(m.get('b').vx<0);});
+test('collision separates overlapping bodies',()=>{const m=new Map([['a',{id:'a',type:'dot',x:0,y:0,body:true}],['b',{id:'b',type:'dot',x:8,y:0,body:true}]]);stepPhysics(m,{...settings,collision:true},.02);assert.ok(m.get('b').x-m.get('a').x>=16);});
+test('repulsion remains finite at coincident positions',()=>{const m=new Map([['a',{id:'a',type:'dot',x:0,y:0,body:true}],['b',{id:'b',type:'dot',x:0,y:0,body:true}]]);for(let i=0;i<100;i++)stepPhysics(m,{...settings,repulsion:1000},.02);assert.ok(Number.isFinite(m.get('a').x));assert.notEqual(m.get('a').x,m.get('b').x);});
+test('numeric and color interpolation',()=>{assert.equal(interpolate(0,10,.5),5);assert.equal(interpolate('#000000','#ffffff',.5),'#808080');});
+test('group body moves all members rigidly',()=>{const m=new Map([['a',{id:'a',type:'dot',x:0,y:0}],['b',{id:'b',type:'dot',x:20,y:0}],['g',{id:'g',type:'group',members:['a','b'],body:true,vx:100,x:0,y:0}]]);stepPhysics(m,settings,.02);assert.equal(m.get('a').x,2);assert.equal(m.get('b').x,22);});
+test('internal connector cannot inflate compound collision bounds',()=>{const m=new Map([['a',{id:'a',type:'dot',x:1000,y:0}],['b',{id:'b',type:'dot',x:1100,y:0}],['e',{id:'e',type:'line',from:'a',to:'b'}],['g',{id:'g',type:'group',members:['a','b','e']}]]);assert.deepEqual(bounds(m.get('g'),m),{x:1000,y:0,w:116,h:16});});
