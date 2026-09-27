@@ -434,7 +434,7 @@ impl App {
     }
 
     fn handle_click(&mut self, click: &Click, now: Instant) {
-        let current = self.generation.to_string();
+        let current = instance_token(self.generation);
         if click.instance.as_deref() != Some(current.as_str()) {
             self.log_click(click, "stale", None, None, None);
             return;
@@ -1026,7 +1026,7 @@ impl App {
             self.sem = Some(sem);
         }
         let mut block = i3bar::Block::pango(full_text);
-        block.instance = Some(self.generation.to_string());
+        block.instance = Some(instance_token(self.generation));
         if !self.open {
             block.min_width = Some(MinWidth::Text("◯".to_string()));
         }
@@ -1070,6 +1070,14 @@ impl App {
         };
         let _ = file.write_all(line.as_bytes());
     }
+}
+
+/// Frame generation as sent in `instance`. i3blocks stores values unquoted and
+/// writes them back raw when they are valid JSON (block_send_key), so a bare
+/// number would return as a JSON number and never match; the prefix keeps the
+/// round trip a string.
+fn instance_token(generation: u64) -> String {
+    format!("g{generation}")
 }
 
 fn same_sem(prev: &Sem, next: &Sem) -> bool {

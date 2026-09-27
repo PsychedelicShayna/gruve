@@ -38,7 +38,7 @@ fn assert_collapsed_glyph(world: &World, frame: &common::Frame, glyph: &str, hex
         );
     }
     if frame.instance.as_deref().unwrap_or("").is_empty() {
-        dump_fail("instance", "non-empty decimal gen", "<missing>", &[frame.clone()]);
+        dump_fail("instance", "non-empty generation token", "<missing>", &[frame.clone()]);
     }
 }
 

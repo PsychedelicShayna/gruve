@@ -910,11 +910,19 @@ pub enum ClickInstance {
 pub fn click_line(button: i32, relative_x: i32, width: i32, instance: Option<&str>) -> String {
     // i3blocks merged-map line. Leading "":"" is what block_send_json writes.
     // full_text is omitted so a glyph cannot confuse parse_click's first-match scan.
+    // i3blocks keeps each value unquoted and writes it back raw when it is valid
+    // JSON (block_send_key: json_is_valid), quoted otherwise; mimic that exactly.
     match instance {
-        Some(inst) => format!(
-            r#"{{"":"","name":"gruve","instance":"{}","button":{button},"relative_x":{relative_x},"width":{width}}}"#,
-            inst.replace('\\', "\\\\").replace('"', "\\\"")
-        ),
+        Some(inst) => {
+            let value = if serde_json::from_str::<serde_json::Value>(inst).is_ok() {
+                inst.to_string()
+            } else {
+                format!("\"{}\"", inst.replace('\\', "\\\\").replace('"', "\\\""))
+            };
+            format!(
+                r#"{{"":"","name":"gruve","instance":{value},"button":{button},"relative_x":{relative_x},"width":{width}}}"#
+            )
+        }
         None => format!(
             r#"{{"":"","name":"gruve","button":{button},"relative_x":{relative_x},"width":{width}}}"#
         ),
