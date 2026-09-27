@@ -16,4 +16,4 @@ Runtime requirements: Python 3 and a modern browser. No package install, build, 
 
 Mouse support is optional: drag objects/canvas, zoom, edit text by double-clicking, undo/redo, pause motion. The command console accepts the same JSON as the CLI. Voice recognition and model invocation remain in the existing conversation.
 
-Tests: `python3 -m unittest -v test_model.py` and `node --test test_engine.js`. Browser tests are served only with `board_server.py --test` at `/test-browser.html`; use isolated data because the harness clears its scene. State is under `data/`; prototype files remain separate.
+Tests: `python3 -m unittest -v test_model.py` and `node --test test_engine.js test_camera.js`. Browser tests are served only with `board_server.py --test` at `/test-browser.html`; use isolated data because the harness clears its scene. State is under `data/`; prototype files remain separate.

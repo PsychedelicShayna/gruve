@@ -1,1 +1,1 @@
-{"private":true,"type":"module","scripts":{"test":"node --test test_engine.js"}}
+{"private":true,"type":"module","scripts":{"test":"node --test test_engine.js test_camera.js"}}

@@ -16,9 +16,9 @@ button.active{background:#6ee7a0;color:#0a0e16;border-color:#6ee7a0}
 .object{cursor:grab}
 .object.selected>.shape{filter:drop-shadow(0 0 5px #a9c8ff);stroke:#dcecff;stroke-width:3}
 .object .overflow{stroke:#ff7a7a;stroke-width:1.5;stroke-dasharray:4 4;pointer-events:none}
-.object .card{height:100%;padding:15px;color:#dde5f1;white-space:pre-wrap;overflow:hidden;overflow-wrap:break-word;font:14px/1.5 system-ui;user-select:none}
-.card strong{display:block;margin-bottom:7px;font-weight:650}
-.card pre{font:13px/1.55 ui-monospace,monospace;margin:0;white-space:pre-wrap;color:#b4e1cc}
+.object .text{white-space:pre-wrap;overflow:hidden;overflow-wrap:break-word;user-select:none}
+#measure{position:absolute;left:-100000px;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:break-word;pointer-events:none}
+.object.group>.hit{pointer-events:fill}
 .object text{font:13px system-ui;paint-order:stroke;stroke:#101620;stroke-width:4;stroke-linejoin:round}
 .object .head{pointer-events:none}
 .handle{fill:#dcecff;stroke:#0a0e16;stroke-width:1;cursor:nwse-resize}
@@ -39,3 +39,4 @@ footer{position:fixed;bottom:17px;left:24px;right:24px;display:flex;justify-cont
 #marks-chip button{padding:1px 7px;font-size:11px;margin-left:6px}
 #toast{position:fixed;left:50%;bottom:55px;transform:translateX(-50%);background:#322537;border:1px solid #b36b7d;padding:10px 16px;border-radius:9px;display:none;max-width:80vw}
 @media(max-width:700px){header{inset:12px}.brand{gap:7px;letter-spacing:0}.brand span{display:none}nav{gap:3px}nav button{padding:5px 7px}#guide{right:12px;width:min(330px,calc(100vw - 24px))}}
+.selection{stroke:#a9c8ff;pointer-events:none}

@@ -1,6 +1,6 @@
 # Drive the idea board
 
-The human supplies meaning. Translate their request into the smallest suitable commands and send promptly. The browser owns animation and physics. You need this contract and object IDs, not the implementation.
+The human supplies meaning. Translate their request into the smallest suitable commands and send promptly. The browser owns animation, layout and physics. You need this contract and object ids, not the implementation.
 
 ## Start and inspect
 
@@ -8,26 +8,10 @@ The human supplies meaning. Translate their request into the smallest suitable c
 python3 /home/shayna/voice-whiteboard/boardctl.py start
 python3 /home/shayna/voice-whiteboard/boardctl.py open
 python3 /home/shayna/voice-whiteboard/boardctl.py state
+python3 /home/shayna/voice-whiteboard/boardctl.py marks
 ```
 
-The page is http://127.0.0.1:8770. Start is idempotent; open once. `state` returns objects indexed by ID, templates, physics settings, sequence number, the human's current `view` and any unread `marks`. Coordinates are world pixels: x rightward, y downward. Shape x/y is the top-left; polygon/path points are relative offsets. Pan/zoom changes only the view.
-
-## Know what the human sees
-
-`state.view` is the visible tab's camera: `{"cx","cy","zoom","w","h"}` — world centre, zoom and the world-space width/height on screen. Anything outside `cx±w/2`, `cy±h/2` is off-screen for them. Move their camera with `view` (below) rather than guessing.
-
-Every card/code/text object carries a browser-reported `measured` field: `{"w","h","contentW","contentH","overflow"}`. Cards with no `height` grow to fit their text, so `overflow` is false. A card with an explicit `height` that is too small reports `overflow:true` with the height the content actually needs; the board also draws a red dashed outline. Fix it with `{"op":"set","select":"id","props":{"height":null}}` (null deletes a field, returning the card to auto-height) or a larger `width`. You never need a screenshot to know whether text fits.
-
-## Read the human's marks
-
-The human can point. In Point mode (button, `M`, or Alt-click) each click leaves a numbered mark — 1, 2, 3 — optionally with a typed note, on an object or on empty space. Marks are for you; they are not scene objects.
-
-```sh
-python3 /home/shayna/voice-whiteboard/boardctl.py marks          # returns unread marks and consumes them
-python3 /home/shayna/voice-whiteboard/boardctl.py marks --peek   # look without consuming
-```
-
-Each mark: `{"n":1,"batch":3,"x":…,"y":…,"target":"card-id"|null,"note":"…"}`. `target` is the object under the click (its root group if grouped). When the human says "link 1 and 2" or "move these to 3", read the marks and resolve the numbers. Consumed marks stay visible but dimmed until newer batches push them out, and numbering restarts at 1 for the next batch. Check `marks` whenever an instruction refers to "this", "these", "here" or a number you did not create.
+The page is http://127.0.0.1:8770. Start is idempotent; open once. `state` returns `objects` by id, `presets` (name → parameters and doc), `physics`, `seq`, the human's `view` and unread `marks`. Coordinates are world pixels: x rightward, y downward. An object's `x`,`y` is its origin in its parent's frame (world for roots).
 
 ## Send and confirm
 
@@ -35,96 +19,127 @@ Each mark: `{"n":1,"batch":3,"x":…,"y":…,"target":"card-id"|null,"note":"…
 python3 /home/shayna/voice-whiteboard/boardctl.py send '{"op":"create","object":{"id":"idea","type":"card","x":-200,"y":0,"title":"An idea","text":"Its definition."}}' --wait
 ```
 
-JSON can also arrive on stdin. HTTP equivalent: POST `/commands` with Content-Type `application/json`. Send one command, an array, or `{"requestId":"unique-id","commands":[...]}` to deduplicate retries during the current server run. A complete sequence is validated before acceptance, then executes in order. Send early steps before continuing to reason. Content changes require no HTML edits, code injection, reloads or navigation.
+JSON can also arrive on stdin. HTTP: POST `/commands`. Send one command, an array, or `{"requestId":"…","commands":[…]}` to deduplicate retries. A whole array is validated before any of it applies, then executes in order. `--wait` waits up to 10 s for the browser to finish; HTTP success alone means accepted. Errors name the field and what was expected — read them and resend.
 
-`--wait` waits up to 10 seconds for a browser completion. HTTP success alone means accepted. `status` reports per-browser first-frame and completion milliseconds from server acceptance. These exclude model inference/tool dispatch. Prefer a current visible client's receipt; background tabs can be throttled. Frame callbacks indicate a rendering opportunity, not proof the human saw a particular pixel.
+## Know what the human sees
 
-## Selection
+- `state.view` — `{"cx","cy","zoom","w","h"}`: the visible tab's camera in world units. Outside `cx±w/2`, `cy±h/2` is off-screen for them. Move it with `view`.
+- `objects[id].box` — `{"x","y","w","h","ox","oy"}` world box of every object as the browser actually laid it out (`ox`,`oy` is the object's world origin), refreshed whenever the board is idle. This is where things *are*, including children of groups and text that grew.
+- `objects[id].measured` — on text: `{"w","h","contentW","contentH","overflow"}`. On a group with an explicit size: whether its children spill out. `overflow:true` is also drawn as a red dashed outline. Cards with no fixed size never overflow; they grow.
 
-`select` accepts `"id"`, `["a","b"]`, or filters such as `{"type":"dot","tag":"test","fraction":0.5}`.
+You never need a screenshot to know whether things fit or overlap: compare boxes.
 
-Filters combine with AND: `ids`, `type`, `tag`, `roots:true`, then `fraction`, `slice:[start,end]`, `limit`. Fraction selects first floor(N × fraction), in creation order. Slice end is exclusive; negative indices work. Roots excludes members owned by groups. `{}` selects all. A missing explicit ID is an error; zero filter matches is a safe no-op.
+## Read the human's marks
+
+In Point mode (button, `M`, or Alt-click) each click leaves a numbered mark — 1, 2, 3 — with an optional typed note, on an object or empty space. `boardctl.py marks` returns and consumes them (`--peek` looks only). Each: `{"n","batch","x","y","target":"id"|null,"note"}`; `target` is the root object under the click. Resolve "link 1 and 2", "move these to 3", "put a table here". Numbering restarts at 1 for each new batch; old batches stay visible but dimmed.
+
+## Primitives
+
+Everything on the board is one of seven primitives. Presets (below) are shorthand that expands into them.
+
+| type | fields |
+|---|---|
+| `rect` | `w`, `h`, `rx` (corner radius) |
+| `ellipse` | `w`, `h` or `r` |
+| `polygon` | `points:[[x,y],…]` (closed), `smooth` |
+| `polyline` | `points`, `smooth`, `head`, `tail` |
+| `text` | `text`, `w` (wrap width, default 260), `h`, `size`, `font` (`sans`/`mono`), `weight`, `align` |
+| `edge` | `from`, `to`, `route`, `curve`, `head`, `tail`, `label` |
+| `group` | `children`, `w`, `h`, `layout`, `padding`, `title`, `outline` |
+
+Common: `id`, `type`, `x`, `y`, `tags`, `opacity`, `color` (stroke/text), `fill`, `strokeWidth`, `dash:[on,off]`, physics `body`, `pinned`, `mass`. Colours are `#rgb`/`#rrggbb`(`aa`), a CSS colour name, `rgb()`/`hsl()`, or `none`.
+
+### Sizing
+
+`w` and `h` are numbers, `"hug"` (wrap the children / the wrapped text) or `"fill"` (take the parent's size). Groups hug by default; text hugs its height. A child with `w:"fill"` and `h:"fill"` is an overlay — it covers the group's whole box and does not affect its size (that is how a card's background works). `layout:{"type":"stack"|"row"|"grid","gap":n,"cols":n,"align":"start|center|end"}` positions children in `children` order; without a layout they sit at their own `x`,`y`. In a grid, columns are as wide as their widest cell and rows as tall as their tallest; `h:"fill"` cells stretch to the row.
+
+Resize a card by setting its `w`; the text re-wraps and the height follows. `{"op":"set","props":{"h":null}}` removes a fixed height (null deletes any field).
+
+### Edges
+
+`from` / `to` accept:
+
+- `"id"` — attach on the shape's outline, toward the other end;
+- `{"id":"a","side":"left|right|top|bottom","offset":0..1}` — a point on a side (midpoint by default);
+- `{"id":"a","at":[fx,fy]}` — a point inside the box by fractions;
+- `{"id":"poly","vertex":2}` — a polygon/polyline point;
+- `[x,y]` — a fixed world point.
+
+`route`: `straight` (default), `curve` (`curve` = bend in px, negative bends the other way), `elbow` (one axis-aligned bend). `head` (at `to`) and `tail` (at `from`): `none`, `arrow`, `open`, `diamond`, `dot`, `bar`. Dependency `{"head":"arrow"}`; both ways `{"head":"arrow","tail":"arrow"}`; composition `{"tail":"diamond"}`; inhibit `{"head":"bar"}`. Edges are roots, can attach to anything except other edges (children of groups included), follow their endpoints and disappear with them. `label` sits at the midpoint.
+
+## Presets
+
+A preset is a named composite with parameters. Create one like a primitive; its parameters are its fields:
+
+```json
+{"op":"create","object":{"id":"a","type":"card","x":0,"y":0,"title":"Router","text":"Decides where a request goes."}}
+{"op":"create","object":{"id":"t","type":"table","x":400,"y":0,"rows":[["Sign","Element"],["Aries","Fire"]],"cols":2,"cellW":140}}
+{"op":"create","object":{"id":"l","type":"list","title":"Fates","items":["route","proxy","terminate"]}}
+```
+
+Built-ins (see `state.presets` for exact parameters and defaults): `card(title,text,w,color,fill,size)`, `code(title,text,w,…)` (monospace), `label(text,w,color,size,align)` (no box), `dot(r,color)`, `diamond(w,h,color,fill)`, `list(title,items,w,…)`, `table(rows,cols,cellW,color,fill,size)`.
+
+An instance is a group whose children have stable ids `instance/child` (a card: `a/bg`, `a/title`, `a/body`). `set` on the instance with parameter keys re-expands it (`{"op":"set","select":"a","props":{"text":"…","color":"#ff596b"}}`); other keys apply to the group. You may edit children directly (`set select:"a/body" props:{color:…}`); after that, a parameter change is refused until you pass `"resetOverrides":true`, so a fix is never lost silently. `{"type":"card"}` in a selection filter matches card instances.
+
+### Define your own
+
+```json
+{"op":"define","preset":{"name":"tent","params":{"size":100,"color":"#ffd479"},"items":[
+  {"id":"outline","type":"polygon","points":[[0,{"$":"-size"}],[{"$":"-size*0.9"},{"$":"size*0.55"}],[{"$":"size*0.9"},{"$":"size*0.55"}]],"color":"${color}","fill":"none","strokeWidth":3},
+  {"id":"ridge","type":"polyline","points":[[0,{"$":"-size"}],[0,{"$":"size*0.2"}]],"color":"${color}","strokeWidth":3}
+]}}
+{"op":"create","object":{"id":"p1","type":"tent","x":300,"y":0,"size":60}}
+```
+
+Rules: `${name}` substitutes a parameter into a string (a whole-string `"${points}"` passes an array through); `{"$":"expr"}` computes a number from `+ - * / ( )` and parameters; `{"repeat":"items","as":"item","index":"i","items":[…]}` expands its items once per element of an array parameter (`${item}`, `${i}`; repeats nest); `"when":"title"` skips an item when that parameter is empty; an item may name an earlier group item as `"parent"` to nest. Child ids must be unique. A preset with one item is an alias for that primitive (no wrapper group). An optional `"group":{…}` sets fields of the wrapper (`w`, `layout`, `padding`). Built-in names are reserved; redefining your own preset changes its instances the next time their parameters are set, and `undefine` refuses a preset that still has instances. Definitions persist with the scene. The built-ins are written in exactly this language — read `presets.json` for the card and table.
 
 ## Commands
 
 | Intent | Example |
 |---|---|
 | Create | `{"op":"create","object":{"id":"a","type":"dot","x":0,"y":0}}` |
+| Create several | `{"op":"create","items":[{…},{…}]}` |
 | Create many | `{"op":"create","object":{"id":"dot","type":"dot","tags":["test"]},"count":100,"spread":350,"seed":4,"stagger":8}` |
 | Edit | `{"op":"set","select":"a","props":{"color":"#ff596b","text":"Updated"}}` |
-| Remove progressively | `{"op":"remove","select":{"type":"dot","fraction":0.5},"duration":150,"stagger":15}` |
-| Move by offset | `{"op":"move","select":"a","by":[200,0],"duration":600}` |
-| Move one to position | `{"op":"move","select":"a","to":[0,0],"duration":400}` |
-| Connect | `{"op":"link","id":"ab","from":"a","to":"b","arrow":true,"props":{"text":"requires"}}` |
-| Compound / weld | `{"op":"group","id":"assembly","select":["a","b"],"props":{"outline":false}}` |
-| Box related objects | `{"op":"group","id":"question","select":["a","b"],"props":{"color":"#ff596b","title":"Reconcile these"}}` |
-| Release members | `{"op":"ungroup","select":"assembly"}` |
-| Pin | `{"op":"set","select":"a","props":{"pinned":true}}` |
-| Throw | `{"op":"impulse","select":"assembly","velocity":[700,0]}` |
-| Pause physics | `{"op":"physics","props":{"enabled":false}}` |
-| Arrange | `{"op":"layout","select":{"roots":true},"mode":"grid","spacing":300,"duration":500}` |
-| Fit everything | `{"op":"view","fit":true,"duration":300}` |
-| Fit some objects | `{"op":"view","fit":["a","b"]}` or `{"op":"view","fit":{"tag":"toml"}}` |
-| Look at a point | `{"op":"view","center":[400,-120],"zoom":1.2,"duration":400}` |
-| Pan | `{"op":"view","by":[300,0]}` |
-| Wait in sequence | `{"op":"wait","duration":200}` |
-| Undo / redo | `{"op":"undo"}` / `{"op":"redo"}` |
+| Remove | `{"op":"remove","select":{"type":"dot","fraction":0.5},"duration":150,"stagger":15}` |
+| Move | `{"op":"move","select":"a","by":[200,0],"duration":600}` / `"to":[0,0]` (one object) |
+| Connect | `{"op":"link","id":"ab","from":"a","to":"b","arrow":true,"props":{"label":"requires","route":"curve"}}` |
+| Group | `{"op":"group","id":"box","select":["a","b"],"props":{"title":"Reconcile these","color":"#ff596b"}}` (members keep their world position; `x`,`y`,`z` in props place the group origin) |
+| Ungroup | `{"op":"ungroup","select":"box"}` |
+| Put into / take out of a group | `{"op":"reparent","select":"a","into":"box"}` / `"into":null` |
+| Reorder children | `{"op":"set","select":"box","props":{"children":["b","a"]}}` |
+| Pin / throw | `{"op":"set","select":"a","props":{"pinned":true}}` / `{"op":"impulse","select":"a","velocity":[700,0]}` |
+| Physics | `{"op":"physics","props":{"enabled":true,"repulsion":1200,"center":0.02,"damping":0.9,"collision":true,"bounce":0.45}}` |
+| Arrange roots | `{"op":"layout","select":{"roots":true},"mode":"grid","spacing":300,"duration":500}` |
+| Camera | `{"op":"view","fit":true}` · `{"op":"view","fit":["a","b"]}` · `{"op":"view","center":[400,-120],"zoom":1.2,"duration":400}` · `{"op":"view","by":[300,0]}` |
+| Wait / undo / redo | `{"op":"wait","duration":200}` · `{"op":"undo"}` · `{"op":"redo"}` |
 
-Bulk creation makes `dot-0`, `dot-1`, etc. `arrange:"grid"` and `spacing` substitute for scatter. `items:[object,...]` creates different objects at once. Layout also accepts `mode:"scatter"`, `spread`, `seed`; a new seed gives a new arrangement.
+## 3D
 
-Duration and stagger are milliseconds. Create/remove default to 180 ms fades; other commands are immediate by default. Stagger start offsets span at most one second. `animate` aliases `set`; specify duration. Numbers and six-digit hex colors interpolate. Text/booleans change at the end. Position changes use `move`. Set cannot change identity, type or group membership.
+The board is 2D until the camera is unlocked: `{"op":"view","mode":"3d","yaw":35,"pitch":-30}` (or the **3D** button). Then:
 
-Original two-step test, compactly:
-```json
-[
-  {"op":"remove","select":{"type":"dot","fraction":0.5},"duration":150,"stagger":15},
-  {"op":"set","select":{"type":"dot"},"props":{"color":"#ff596b"},"duration":180,"stagger":8}
-]
-```
-
-## Drawing vocabulary
-
-Types: `dot`, `ellipse`, `rectangle`, `diamond`, `polygon`, `line`, `arrow`, `path`, `text`, `card`, `code`, `group`.
-
-Common fields: `id`, `type`, `x`, `y`, `width`, `height`, `color`, `fill`, `opacity`, `strokeWidth`, `tags`. Dot supports `radius`. Text/card/code supports `title`, `text`, `fontSize`. Width defaults to 260 and text wraps inside it; omit `height` and the card grows to fit. Give `height` only when you want a fixed box, and read `measured.overflow` afterwards. Text is literal; code preserves whitespace. This version has no image embeds, Markdown rendering or math typesetting.
-
-Polygon/path use `points:[[x,y],...]`; path also accepts `closed:true`. Lines/arrows use two or more points or paired `from`/`to` IDs. Links attach to shapes/groups, not other links, start and end on the shape boundary and follow their endpoints, with optional `text` labels. Group `members` are IDs; move a group as one object. Each member has one parent. Removing a group removes its members; ungrouping preserves them. Deleting an endpoint removes its links.
-
-Connections and point-lines take `route`: `straight` (default), `curve` (quadratic bend, `curve` sets the bend in pixels, negative bends the other way) or `elbow` (axis-aligned with one bend). Ends take `head` (at `to` / last point) and `tail` (at `from` / first point) from `none`, `arrow` (filled), `open` (chevron), `dot`, `diamond`, `bar`. `arrow:true` on `link` is shorthand for `head:"arrow"`. Examples: a dependency `{"head":"arrow"}`, an association `{"head":"none"}`, a bidirectional flow `{"head":"arrow","tail":"arrow"}`, composition `{"tail":"diamond"}`, an inhibitor `{"head":"bar"}`.
-
-## Behavior vocabulary
-
-Set `body:true` to participate in physics. A root group can be a body; members maintain fixed offsets. `pinned:true` anchors it. `mass` controls resistance. Impulse adds pixels/second and enables physics.
+- Every position may carry `z` (toward the viewer; default 0) and polygon/polyline points may be `[x,y,z]`. A `polygon` with 3D points is a **face**, flat-shaded and depth-sorted; a `polyline` is an **edge**; a small `ellipse` is a **vertex**. A free group (no `layout`) is a 3D container: its children's `x`,`y`,`z` are relative to it.
+- Cards, tables, lists, text, rects and ellipses are **billboards**: they always face the viewer and scale with distance. The board will not tilt text.
+- Built-ins `cube(size,color)` and `pyramid(size,height,color)` are groups of faces; define others the same way with explicit `[x,y,z]` points.
+- Camera: `view` accepts `yaw` (degrees, orbit around the vertical axis), `pitch` (-85..85), `center:[x,y,z]`, `zoom`, `fit`, and `mode:"2d"|"3d"`; `yaw` or `pitch` without `mode` also unlocks 3D. `state.view` reports `mode`, `yaw`, `pitch`, `cz`. In the UI: right-drag orbits, drag pans, wheel zooms. With yaw = pitch = 0 and every z = 0 the 3D view is identical to 2D.
+- Physics pauses while in 3D; `box` values stay 2D world boxes; marks are placed on the z = 0 plane. Faces are painter-sorted by mean depth, so leave a few pixels between touching solids rather than making faces coplanar.
 
 ```json
-[
-  {"op":"set","select":{"type":"card","roots":true},"props":{"body":true}},
-  {"op":"link","id":"spring","from":"a","to":"b","props":{"rest":220,"strength":2}},
-  {"op":"physics","props":{"enabled":true,"repulsion":1200,"center":0.02,"damping":0.94,"collision":true,"bounce":0.45}}
-]
+[{"op":"create","object":{"id":"tower","type":"cube","x":0,"y":0,"z":0,"size":120,"color":"#7ab8ff"}},
+ {"op":"create","object":{"id":"roof","type":"pyramid","x":0,"y":-125,"z":0,"size":120,"height":80,"color":"#ffd479"}},
+ {"op":"create","object":{"id":"why","type":"card","x":200,"y":-200,"z":60,"title":"A tower","text":"Two presets stacked in z."}},
+ {"op":"view","mode":"3d","center":[0,-60,0],"zoom":1.2,"yaw":30,"pitch":-25,"duration":400}]
 ```
 
-`rest` is spring distance; `strength` stiffness. Repulsion separates bodies; center attracts them toward origin. Damping 0..1 preserves that velocity fraction per 60 Hz frame. Bounce 0..1 is restitution. Collisions use axis-aligned bounding boxes. There is no rotation, accurate polygon contact, hinge/friction solver or gravity field. Welding uses groups; anchoring uses pins; flexible relationships use springs. Physics continues locally after the command finishes.
 
-## Reusable props
+`select` accepts `"id"`, `["a","b"]`, or a filter: `type` (primitive or preset name), `preset`, `tag`, `parent`, `roots:true`, `ids`, then `fraction`, `slice:[start,end]`, `limit`. `{}` selects everything. Moving a child of a laid-out group is an error (reorder or reparent it instead). Removing a group removes its children and their edges; ungrouping keeps them.
 
-Define once, spawn repeatedly. Template x/y is relative to spawn position. Local IDs become `instance/local-id`; internal links/groups are remapped. The instance is itself a group.
+Durations are milliseconds. Create/remove default to 180 ms fades and `view` to a 300 ms glide; everything else is immediate unless given `duration`. Numbers and six-digit colours interpolate. Bulk creation makes `dot-0`, `dot-1`, …; `arrange:"grid"` with `spacing` replaces scatter.
 
-```json
-[
-  {"op":"define","name":"pyramid","items":[
-    {"id":"outline","type":"path","points":[[0,-100],[-90,55],[0,95],[90,55],[0,-100]],"color":"#ffd479","strokeWidth":3},
-    {"id":"ridge","type":"line","points":[[0,-100],[0,95]],"color":"#ffd479","strokeWidth":3},
-    {"id":"back","type":"path","points":[[-90,55],[0,20],[90,55]],"color":"#b58c49"},
-    {"id":"hidden","type":"line","points":[[0,-100],[0,20]],"color":"#b58c49"}
-  ]},
-  {"op":"spawn","template":"pyramid","id":"pyramid-1","x":-400,"y":0,"body":true},
-  {"op":"move","select":"pyramid-1","by":[250,0],"duration":500}
-]
-```
+## Physics
+
+Roots with `body:true` participate; children move with their root. `pinned` anchors, `mass` resists, an edge with `rest` and `strength` is a spring. Repulsion separates bodies, `center` pulls toward the origin, damping keeps that fraction of velocity per frame, collisions use boxes. Keep body counts modest; work is quadratic.
 
 ## Recovery and limits
 
-Loopback service; one user, one visible controlling tab. Multiple tabs simulate independently and may disagree about physics. Scene/templates and 30 undo states persist in `data/scene.json`; commands append to `data/history.jsonl`. Reconnect loads the current scene rather than replaying animations. Visible clients checkpoint positions every 1.5 seconds while the queue is idle.
-
-Undo covers scene operations, not each physics frame or camera movement. Clear is undoable but use it only when the human requests an empty board. Preserve their ideas during demonstrations. Limits: 1000 objects, 500 per bulk create, 200 commands/request, 10 seconds/duration. Physics work grows quadratically with participating bodies, so keep body counts modest.
+Loopback service; one human, one visible controlling tab. Scene, presets, 30 undo steps and marks persist in `data/scene.json`; commands append to `data/history.jsonl`. Reconnect loads the current scene without replaying animations. Limits: 2000 objects, 500 per bulk create, 200 commands/request, 10 s per duration, 500 elements per repeat. Clear is undoable; use it only when asked. Preserve the human's ideas.
