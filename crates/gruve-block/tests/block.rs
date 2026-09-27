@@ -1254,4 +1254,240 @@ fn run_print_paths(home: &std::path::Path, extra: &[(&str, &str)]) -> (std::proc
     }
 }
 
+fn sig(pid: u32, name: &str) {
+    let status = Command::new("kill")
+        .args([name, &pid.to_string()])
+        .status()
+        .unwrap_or_else(|e| panic!("kill {name}: {e}"));
+    assert!(status.success(), "kill {name} {pid} failed: {status}");
+}
+
+const IDLE_REPLY: &str = r#"{"ok":true,"result":{"state":"idle","pipeline":"idle","error":null}}"#;
+
+/// Grok blocker 1: a stale stop reply must not overwrite a newer recording snapshot
+/// that became readable in the same wake.
+#[test]
+fn r_grok_b1_stale_reply_keeps_recording() {
+    let mut world = World::start();
+    world.stub().set_withhold();
+    push_and_wait(&world, &snap("recording"), GLYPH_ACTIVE);
+    world.click_latest(1, 0, 40);
+    world.stub().wait_requests(1, FRAME_WAIT);
+    std::thread::sleep(Duration::from_millis(20));
+    let pid = world.pid();
+    sig(pid, "-STOP");
+    world.stub().push_line(r#"{"state":"recording","pipeline":"idle","error":"HOT"}"#);
+    world.stub().release_reply(IDLE_REPLY);
+    std::thread::sleep(Duration::from_millis(30));
+    sig(pid, "-CONT");
+    std::thread::sleep(Duration::from_millis(200));
+    let latest = world.latest();
+    if latest.plain != GLYPH_ACTIVE {
+        dump_fail(
+            "stale idle reply must not replace the newer recording snapshot",
+            GLYPH_ACTIVE,
+            &latest.plain,
+            &world.frames(),
+        );
+    }
+    world.click_latest(3, 0, 100);
+    let expanded = world.wait_frame(FRAME_WAIT, |f| f.min_width.is_none() && f.plain.contains("HOT"));
+    if !expanded.plain.contains(GLYPH_ACTIVE) || !expanded.full_text.contains("HOT") {
+        dump_fail("expanded recording keeps HOT", "● … HOT", &expanded.plain, &world.frames());
+    }
+    let mark = world.frame_len();
+    world.click_latest(3, 0, 100);
+    world.wait_after(mark, FRAME_WAIT, |f| f.min_width.is_some() && f.plain == GLYPH_ACTIVE);
+    std::thread::sleep(DEBOUNCE + Duration::from_millis(20));
+    world.click_latest(1, 0, 40);
+    let reqs = world.stub().wait_requests(2, FRAME_WAIT);
+    assert!(reqs[1].contains("stop"), "next click must stop, got {}", reqs[1]);
+    assert!(
+        !request_commands(&world).iter().any(|c| c == "start"),
+        "start leaked: {:?}",
+        world.stub().requests()
+    );
+}
+
+/// Astra M1: a late stop reply must not re-arm Start while the subscription is offline.
+#[test]
+fn r_astra_m1_offline_reply_does_not_rearm_start() {
+    let mut world = World::start();
+    world.stub().set_withhold();
+    push_and_wait(&world, &snap("recording"), GLYPH_ACTIVE);
+    world.click_latest(1, 0, 40);
+    world.stub().wait_requests(1, FRAME_WAIT);
+    let mark = world.frame_len();
+    world.stub().close_subs();
+    world.wait_after(mark, FRAME_WAIT, |f| f.plain == GLYPH_OFFLINE);
+    std::thread::sleep(Duration::from_millis(30));
+    world.stub().release_reply(IDLE_REPLY);
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_millis(40) {
+        let latest = world.latest();
+        if latest.plain != GLYPH_OFFLINE {
+            dump_fail(
+                "reply while offline must not restore Idle",
+                GLYPH_OFFLINE,
+                &latest.plain,
+                &world.frames(),
+            );
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    world.click_latest(1, 0, 40);
+    std::thread::sleep(Duration::from_millis(25));
+    assert!(
+        !request_commands(&world).iter().any(|c| c == "start"),
+        "start before the next subscribe: {:?}",
+        world.stub().command_names()
+    );
+}
+
+/// Astra M3: a burst of valid snapshots over 64 KiB must not drop the subscription.
+#[test]
+fn r_astra_m3_valid_burst_stays_recording() {
+    let world = World::start();
+    push_and_wait(&world, &snap("recording"), GLYPH_ACTIVE);
+    let pad = "x".repeat(9000);
+    let line = format!(
+        r#"{{"state":"recording","pipeline":"idle","error":null,"usage":{{"padding":"{pad}"}}}}"#
+    );
+    assert!(line.len() < 64 * 1024, "single line {} exceeds 64 KiB", line.len());
+    let mut blob = Vec::new();
+    for _ in 0..8 {
+        blob.extend(line.as_bytes());
+        blob.push(b'\n');
+    }
+    assert!(blob.len() > 64 * 1024, "burst {} is not over 64 KiB", blob.len());
+    let pid = world.pid();
+    sig(pid, "-STOP");
+    world.stub().push_raw(&blob);
+    std::thread::sleep(Duration::from_millis(40));
+    let subs = world.stub().subscribe_count();
+    sig(pid, "-CONT");
+    let frame = world.wait_plain(GLYPH_ACTIVE, FRAME_WAIT);
+    if !frame.full_text.contains(BLUE) {
+        dump_fail("recording color", BLUE, &frame.full_text, &world.frames());
+    }
+    std::thread::sleep(Duration::from_millis(150));
+    let latest = world.latest();
+    if latest.plain != GLYPH_ACTIVE {
+        dump_fail(
+            "valid burst must stay Recording",
+            GLYPH_ACTIVE,
+            &latest.plain,
+            &world.frames(),
+        );
+    }
+    assert_eq!(
+        world.stub().subscribe_count(),
+        subs,
+        "valid burst must not drop the subscription"
+    );
+}
+
+/// Astra m1: once mode emits the first snapshot only.
+#[test]
+fn r_astra_m1_once_emits_one_idle_frame() {
+    let mut world = World::start_with(WorldOpts {
+        extra_env: vec![("RUSTBLOCKS_ONCE".into(), "1".into())],
+        ..WorldOpts::default()
+    });
+    world.stub().wait_subscribes(1, FRAME_WAIT);
+    let mut bytes = Vec::new();
+    bytes.extend(snap("idle").as_bytes());
+    bytes.push(b'\n');
+    bytes.extend(snap("recording").as_bytes());
+    bytes.push(b'\n');
+    world.stub().push_raw(&bytes);
+    let status = world.wait_exit(FRAME_WAIT);
+    assert!(status.success(), "once mode exit {status}; stderr={}", world.stderr());
+    let frames = world.frames();
+    assert_eq!(
+        frames.len(),
+        1,
+        "once mode must emit exactly one frame: {}",
+        format_frames(&frames)
+    );
+    assert_eq!(frames[0].plain, GLYPH_IDLE);
+}
+
+/// Astra m2: a readable stdin flood must not starve the subscription or deadlines.
+#[test]
+fn r_astra_m2_stdin_flood_does_not_starve() {
+    let world = World::start_with(WorldOpts {
+        stdin_zero: true,
+        ..WorldOpts::default()
+    });
+    world.stub().wait_subscribes(1, FRAME_WAIT);
+    world.stub().push_line(&snap("recording"));
+    let frame = world.wait_plain(GLYPH_ACTIVE, Duration::from_millis(300));
+    assert_eq!(frame.plain, GLYPH_ACTIVE);
+
+    let silent = World::start_with(WorldOpts {
+        stdin_zero: true,
+        ..WorldOpts::default()
+    });
+    let t0 = Instant::now();
+    silent.stub().wait_subscribes(1, FRAME_WAIT);
+    silent.stub().wait_subscribes(2, Duration::from_millis(1000));
+    assert!(
+        t0.elapsed() < Duration::from_millis(1000),
+        "first-snapshot deadline did not fire under a stdin flood: {:?}",
+        t0.elapsed()
+    );
+}
+
+/// Grok minor 3: an expanded middle-click spawn failure must survive the collapse.
+#[test]
+fn r_grok_m3_expanded_spawn_failure_notice() {
+    let bad = std::env::temp_dir().join(format!(
+        "gruve-nospawn-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&bad).unwrap();
+    let launcher = bad.display().to_string();
+    let mut world = World::start_with(WorldOpts {
+        args: vec!["--launcher".into(), launcher.clone()],
+        ..WorldOpts::default()
+    });
+    push_and_wait(&world, &snap("idle"), GLYPH_IDLE);
+    world.click_latest(3, 0, 100);
+    world.wait_frame(FRAME_WAIT, |f| f.min_width.is_none());
+    let mark = world.frame_len();
+    world.click_latest(2, 0, 100);
+    world.wait_after(mark, FRAME_WAIT, |f| f.min_width.is_some());
+    world.click_latest(3, 0, 100);
+    let expanded = world.wait_frame(FRAME_WAIT, |f| {
+        f.min_width.is_none() && f.plain.contains("spawn failed")
+    });
+    if !expanded.full_text.contains(ORANGE) {
+        dump_fail("spawn-failed notice color", ORANGE, &expanded.full_text, &world.frames());
+    }
+
+    let mut collapsed = World::start_with(WorldOpts {
+        args: vec!["--launcher".into(), launcher],
+        ..WorldOpts::default()
+    });
+    collapsed.track_dir(bad);
+    push_and_wait(&collapsed, &snap("idle"), GLYPH_IDLE);
+    collapsed.click_latest(2, 0, 40);
+    std::thread::sleep(Duration::from_millis(40));
+    collapsed.click_latest(3, 0, 100);
+    let again = collapsed.wait_frame(FRAME_WAIT, |f| {
+        f.min_width.is_none() && f.plain.contains("spawn failed")
+    });
+    assert!(
+        again.full_text.contains(ORANGE),
+        "collapsed spawn failure notice missing: {}",
+        again.full_text
+    );
+}
+
+
 

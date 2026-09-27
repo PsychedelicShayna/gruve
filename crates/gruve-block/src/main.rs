@@ -26,6 +26,7 @@ use crate::stt::{
 use crate::view::{NoticeKind, Side, Tag};
 
 const STDIN_CAP: usize = 4 * 1024;
+const STDIN_WAKE_BUDGET: usize = 4 * 1024;
 const SUB_CAP: usize = 64 * 1024;
 
 struct Args {
@@ -85,6 +86,8 @@ struct Req {
     write_off: usize,
     read_buf: Vec<u8>,
     deadline: Option<Instant>,
+    /// `sub_seq` at the moment the command bytes were fully written.
+    sent_seq: Option<u64>,
 }
 
 struct Sem {
@@ -108,6 +111,8 @@ struct App {
     local_notice: Option<String>,
     notice_state: Option<String>,
     sub: Sub,
+    /// Bumps on every applied subscription line and on disconnect.
+    sub_seq: u64,
     start: Option<Req>,
     stop: Option<Req>,
     last_button1: Option<Instant>,
@@ -251,6 +256,7 @@ impl App {
             },
             start: None,
             stop: None,
+            sub_seq: 0,
             last_button1: None,
             children: Vec::new(),
             generation: 0,
@@ -382,15 +388,11 @@ impl App {
     }
 
     fn read_stdin(&mut self, now: Instant) -> io::Result<bool> {
+        let mut left = STDIN_WAKE_BUDGET;
         let mut tmp = [0u8; 4096];
-        loop {
-            let n = unsafe {
-                libc::read(
-                    libc::STDIN_FILENO,
-                    tmp.as_mut_ptr().cast(),
-                    tmp.len(),
-                )
-            };
+        while left > 0 {
+            let want = tmp.len().min(left);
+            let n = unsafe { libc::read(libc::STDIN_FILENO, tmp.as_mut_ptr().cast(), want) };
             if n < 0 {
                 let err = io::Error::last_os_error();
                 if err.kind() == io::ErrorKind::Interrupted {
@@ -404,8 +406,11 @@ impl App {
             if n == 0 {
                 return Ok(true);
             }
-            self.ingest_stdin(&tmp[..n as usize], now);
+            let n = n as usize;
+            left -= n;
+            self.ingest_stdin(&tmp[..n], now);
         }
+        Ok(false)
     }
 
     fn ingest_stdin(&mut self, data: &[u8], now: Instant) {
@@ -446,9 +451,12 @@ impl App {
         match click.button {
             1 => self.click_left(click, now),
             2 => {
-                self.spawn_configurator();
+                let spawned = self.spawn_configurator();
                 if self.open {
                     self.do_collapse();
+                }
+                if !spawned {
+                    self.set_notice("spawn failed");
                 }
                 self.log_click(click, "spawn", None, None, None);
             }
@@ -601,7 +609,7 @@ impl App {
         self.snap = None;
     }
 
-    fn spawn_configurator(&mut self) {
+    fn spawn_configurator(&mut self) -> bool {
         let config = self.config_dir.join("config.toml");
         let mut cmd = Command::new(&self.launcher);
         cmd.arg("--config")
@@ -619,8 +627,11 @@ impl App {
             });
         }
         match cmd.spawn() {
-            Ok(child) => self.children.push(child),
-            Err(_) => self.set_notice("spawn failed"),
+            Ok(child) => {
+                self.children.push(child);
+                true
+            }
+            Err(_) => false,
         }
     }
 
@@ -656,6 +667,7 @@ impl App {
     }
 
     fn sub_down(&mut self, now: Instant, notice: bool) {
+        self.sub_seq = self.sub_seq.saturating_add(1);
         self.sub.fd = None;
         self.sub.phase = SubPhase::Offline;
         self.sub.write_off = 0;
@@ -714,39 +726,82 @@ impl App {
         let Some(fd) = self.sub.fd.as_ref().map(OwnedFd::raw) else {
             return;
         };
-        match read_some(fd, &mut self.sub.read_buf, SUB_CAP) {
-            Ok(ReadEnd::Oversize) => self.sub_down(now, true),
-            Ok(ReadEnd::Error) => self.sub_down(now, true),
-            Ok(ReadEnd::Eof) => {
-                self.take_sub_lines();
+        let mut tmp = [0u8; 8192];
+        loop {
+            if self.sub.read_buf.len() >= SUB_CAP && !self.sub.read_buf.contains(&b'\n') {
                 self.sub_down(now, true);
+                return;
             }
-            Ok(ReadEnd::Block) => {
-                self.take_sub_lines();
+            let n = unsafe { libc::read(fd, tmp.as_mut_ptr().cast(), tmp.len()) };
+            if n < 0 {
+                let err = io::Error::last_os_error();
+                if err.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                if err.kind() == io::ErrorKind::WouldBlock {
+                    let _ = self.take_sub_lines(now);
+                    return;
+                }
+                self.sub_down(now, true);
+                return;
             }
-            Err(_) => self.sub_down(now, true),
+            if n == 0 {
+                let once_done = self.take_sub_lines(now);
+                if once_done || self.once_have_snapshot() {
+                    return;
+                }
+                self.sub_down(now, true);
+                return;
+            }
+            self.sub.read_buf.extend_from_slice(&tmp[..n as usize]);
+            if self.take_sub_lines(now) {
+                return;
+            }
+            if self.sub.read_buf.len() >= SUB_CAP && !self.sub.read_buf.contains(&b'\n') {
+                self.sub_down(now, true);
+                return;
+            }
         }
     }
 
-    fn take_sub_lines(&mut self) {
-        if self.sub.read_buf.len() >= SUB_CAP && !self.sub.read_buf.contains(&b'\n') {
-            return;
+    fn once_have_snapshot(&self) -> bool {
+        self.once && matches!(self.sub.phase, SubPhase::Reading { saw: true })
+    }
+
+    /// Returns true when the caller must stop reading: once-mode took its
+    /// snapshot, or one frame reached 64 KiB and the subscription was dropped.
+    fn take_sub_lines(&mut self, now: Instant) -> bool {
+        let lines = take_lines(&mut self.sub.read_buf);
+        if lines.is_empty() {
+            return false;
         }
-        for line in take_lines(&mut self.sub.read_buf) {
-            let Ok(text) = std::str::from_utf8(&line) else {
-                self.fail_closed_unknown();
-                self.mark_sub_saw();
-                continue;
-            };
-            self.mark_sub_saw();
-            match stt::apply_line(text) {
-                LineEffect::Known(snap) => self.apply_snap(snap),
-                LineEffect::Unknown => {
-                    self.fail_closed_unknown();
-                    self.log_text(&format!("bad-line {text}\n"));
-                }
+        for line in lines {
+            if line.len() >= SUB_CAP {
+                self.sub_down(now, true);
+                return true;
+            }
+            self.apply_sub_line(&line);
+            if self.once {
+                return true;
             }
             self.render();
+        }
+        false
+    }
+
+    fn apply_sub_line(&mut self, line: &[u8]) {
+        self.sub_seq = self.sub_seq.saturating_add(1);
+        self.mark_sub_saw();
+        let Ok(text) = std::str::from_utf8(line) else {
+            self.fail_closed_unknown();
+            return;
+        };
+        match stt::apply_line(text) {
+            LineEffect::Known(snap) => self.apply_snap(snap),
+            LineEffect::Unknown => {
+                self.fail_closed_unknown();
+                self.log_text(&format!("bad-line {text}\n"));
+            }
         }
     }
 
@@ -767,6 +822,7 @@ impl App {
                 return;
             }
         };
+        let seq = self.sub_seq;
         let mut req = Req {
             fd,
             kind,
@@ -774,12 +830,14 @@ impl App {
             write_off: 0,
             read_buf: Vec::new(),
             deadline: Some(now + self.connect_budget()),
+            sent_seq: None,
         };
         if phase == ReqPhase::Writing {
             match write_some(req.fd.raw(), kind.wire(), &mut req.write_off) {
                 Ok(true) => {
                     req.phase = ReqPhase::Reading;
                     req.deadline = None;
+                    req.sent_seq = Some(seq);
                 }
                 Ok(false) => {}
                 Err(_) => {
@@ -852,6 +910,7 @@ impl App {
     }
 
     fn pump_req_write(&mut self, is_start: bool) {
+        let seq = self.sub_seq;
         let (kind, fd, mut off) = {
             let Some(req) = self.req_mut(is_start) else {
                 return;
@@ -865,6 +924,7 @@ impl App {
                     if done {
                         req.phase = ReqPhase::Reading;
                         req.deadline = None;
+                        req.sent_seq = Some(seq);
                     }
                 }
             }
@@ -914,18 +974,37 @@ impl App {
     }
 
     fn finish_reply(&mut self, is_start: bool, _kind: WireCommand, line: &str) {
+        let sent_seq = if is_start {
+            self.start.as_ref().and_then(|req| req.sent_seq)
+        } else {
+            self.stop.as_ref().and_then(|req| req.sent_seq)
+        };
         if is_start {
             self.start = None;
         } else {
             self.stop = None;
         }
         match stt::parse_reply(line) {
-            Reply::Applied(LineEffect::Known(snap)) => self.apply_snap(snap),
-            Reply::Applied(LineEffect::Unknown) => self.fail_closed_unknown(),
+            Reply::Applied(effect) => {
+                if self.reply_result_applies(sent_seq) {
+                    match effect {
+                        LineEffect::Known(snap) => self.apply_snap(snap),
+                        LineEffect::Unknown => self.fail_closed_unknown(),
+                    }
+                }
+            }
             Reply::Rejected(err) => self.set_notice(&err),
             Reply::Malformed => self.set_notice("malformed reply"),
         }
         self.render();
+    }
+
+    fn reply_result_applies(&self, sent_seq: Option<u64>) -> bool {
+        let live = matches!(self.sub.phase, SubPhase::Reading { saw: true });
+        live
+            && self.phase != Phase::Offline
+            && self.snap.is_some()
+            && sent_seq == Some(self.sub_seq)
     }
 
     fn clear_req(&mut self, is_start: bool, notice: &str) {

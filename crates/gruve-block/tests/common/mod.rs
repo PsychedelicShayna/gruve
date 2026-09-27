@@ -214,6 +214,7 @@ struct StubInner {
     subscribes: Vec<String>,
     all_lines: Vec<String>,
     sub_txs: Vec<std::sync::mpsc::Sender<SubCmd>>,
+    req_txs: Vec<std::sync::mpsc::Sender<String>>,
     reply: ReplyPolicy,
     open_requests: usize,
 }
@@ -240,6 +241,7 @@ impl Stub {
             subscribes: Vec::new(),
             all_lines: Vec::new(),
             sub_txs: Vec::new(),
+            req_txs: Vec::new(),
             reply: ReplyPolicy::Reply(
                 r#"{"ok":true,"result":{"state":"idle","pipeline":"idle","error":null}}"#.into(),
             ),
@@ -329,6 +331,12 @@ impl Stub {
         for tx in st.sub_txs.drain(..) {
             let _ = tx.send(SubCmd::Close);
         }
+    }
+
+    /// Write `body` as the reply line on every connection currently withholding.
+    pub fn release_reply(&self, body: &str) {
+        let mut st = self.state.lock().unwrap();
+        st.req_txs.retain(|tx| tx.send(body.to_string()).is_ok());
     }
 
     pub fn command_names(&self) -> Vec<String> {
@@ -454,22 +462,21 @@ fn handle_conn(mut stream: UnixStream, state: Arc<Mutex<StubInner>>, stop: Arc<A
         };
         match policy {
             ReplyPolicy::Withhold => {
-                let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
-                let mut buf = [0u8; 64];
+                let (tx, rx) = std::sync::mpsc::channel();
+                state.lock().unwrap().req_txs.push(tx);
                 loop {
                     if stop.load(Ordering::SeqCst) {
                         break;
                     }
-                    match stream.read(&mut buf) {
-                        Ok(0) => break,
-                        Err(e)
-                            if e.kind() == std::io::ErrorKind::WouldBlock
-                                || e.kind() == std::io::ErrorKind::TimedOut =>
-                        {
-                            continue;
+                    match rx.recv_timeout(Duration::from_millis(50)) {
+                        Ok(body) => {
+                            let _ = write_all_ignore(&mut stream, body.as_bytes());
+                            let _ = write_all_ignore(&mut stream, b"\n");
+                            let _ = stream.flush();
+                            break;
                         }
-                        Err(_) => break,
-                        Ok(_) => {}
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                     }
                 }
                 mark_closed();
@@ -514,6 +521,7 @@ pub struct WorldOpts {
     pub extra_env: Vec<(String, String)>,
     pub clear_xdg: bool,
     pub args: Vec<String>,
+    pub stdin_zero: bool,
 }
 
 impl Default for WorldOpts {
@@ -524,6 +532,7 @@ impl Default for WorldOpts {
             extra_env: Vec::new(),
             clear_xdg: true,
             args: Vec::new(),
+            stdin_zero: false,
         }
     }
 }
@@ -593,7 +602,12 @@ impl World {
             }
         }
         cmd.args(&args);
-        cmd.stdin(Stdio::piped());
+        if opts.stdin_zero {
+            let zero = fs::File::open("/dev/zero").expect("/dev/zero");
+            cmd.stdin(Stdio::from(zero));
+        } else {
+            cmd.stdin(Stdio::piped());
+        }
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         let mut child = cmd.spawn().unwrap_or_else(|e| panic!("spawn {bin}: {e}"));
