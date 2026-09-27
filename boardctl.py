@@ -2,6 +2,7 @@
 """Small command driver. No dependencies. JSON can be supplied as an argument or stdin."""
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,7 @@ import urllib.error
 ROOT=Path(__file__).parent
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--port',type=int,default=8770)
+p.add_argument('--data',type=Path,default=Path(os.environ.get('VOICE_WHITEBOARD_DATA') or ROOT/'data'),help='start: scene directory (default $VOICE_WHITEBOARD_DATA, else data/ beside this script)')
 p.add_argument('action',choices=['start','send','state','status','open','marks'])
 p.add_argument('json',nargs='?')
 p.add_argument('--wait',action='store_true',help='wait for a browser completion acknowledgment, up to 10 seconds')
@@ -22,13 +24,13 @@ try:
     if a.action=='start':
         try:status=get('/status')
         except (OSError,urllib.error.URLError):
-            data=ROOT/'data';data.mkdir(exist_ok=True)
+            data=a.data.expanduser();data.mkdir(parents=True,exist_ok=True)
             with (data/'server.log').open('ab') as out:
-                subprocess.Popen([sys.executable,str(ROOT/'board_server.py'),'--port',str(a.port)],stdin=subprocess.DEVNULL,stdout=out,stderr=out,start_new_session=True)
+                subprocess.Popen([sys.executable,str(ROOT/'board_server.py'),'--port',str(a.port),'--data',str(data)],stdin=subprocess.DEVNULL,stdout=out,stderr=out,start_new_session=True)
             for _ in range(30):
                 try:status=get('/status');break
                 except (OSError,urllib.error.URLError):time.sleep(.1)
-            else:raise RuntimeError('server did not start; read data/server.log')
+            else:raise RuntimeError(f'server did not start; read {data}/server.log')
         if status.get('version')!=3:raise RuntimeError('port is occupied by another service or an older board')
         print(json.dumps({'url':url,'version':status['version'],'objects':status['objects']}))
     elif a.action=='open':subprocess.run(['xdg-open',url],check=True)

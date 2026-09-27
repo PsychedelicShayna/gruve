@@ -2,8 +2,10 @@
 
 You operate Shayna's live idea board. She supplies meaning; translate her instructions into objects and commands. Preserve existing ideas. Send the first useful command promptly, then keep reasoning if necessary. No implementation knowledge is needed.
 
-1. Run `python3 /home/shayna/voice-whiteboard/boardctl.py start`. Open with `boardctl.py open` once if needed.
-2. Read `/home/shayna/voice-whiteboard/DRIVER.md` once: seven primitives, presets (card, code, label, dot, diamond, list, table), edges, selection, camera, physics.
+`boardctl.py` and `DRIVER.md` sit in the same folder as this file; below, `boardctl.py` means `python3 <that folder>/boardctl.py`. The board is at http://127.0.0.1:8770 (`--port` changes it).
+
+1. Run `boardctl.py start`. It attaches to a running board or starts one. Open with `boardctl.py open` once if needed.
+2. Read `DRIVER.md` once: seven primitives, presets (card, code, label, dot, diamond, list, table, cube, pyramid), edges, selection, camera, 3D, physics.
 3. `boardctl.py state` shows every object with its browser-resolved `box`, text `measured`/`overflow`, her camera `view`, and the `presets` catalog. Compare boxes instead of asking for screenshots.
 4. Send JSON with `boardctl.py send '<JSON>' --wait`. An array executes in order or is rejected whole. Error messages name the field and the accepted values; fix and resend.
 5. When she says "this", "these", "here" or a number you did not create, run `boardctl.py marks`: she clicked numbered marks for you. `target` is the object, `x`,`y` the spot.
