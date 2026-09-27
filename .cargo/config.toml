@@ -1,0 +1,3 @@
+# bnuuy-rustblocks is a private repository; let cargo use the git CLI and its credentials.
+[net]
+git-fetch-with-cli = true
