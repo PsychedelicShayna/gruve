@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Start (or attach to) the voice whiteboard, open it, and print the prompt an agent needs to drive it.
+set -euo pipefail
+
+self=$(readlink -f "${BASH_SOURCE[0]}")
+home=${VOICE_WHITEBOARD_HOME:-$(dirname "$(dirname "$self")")}
+port=8770
+open=1
+
+usage() {
+	cat <<EOF
+usage: voice-whiteboard [--port N] [--no-open] [--prompt] [--stop]
+
+  (no flags)  start the board if needed, open it in the browser, print instructions
+  --port N    use port N instead of 8770
+  --no-open   do not open a browser tab
+  --prompt    print the agent prompt file's contents and exit
+  --stop      stop the board on the port and exit
+
+Install: $home
+Scene:   \${VOICE_WHITEBOARD_DATA:-$home/data}
+EOF
+}
+
+while (($#)); do
+	case $1 in
+	--port) port=$2; shift ;;
+	--no-open) open=0 ;;
+	--prompt) cat "$home/QUICKSTART.md"; exit 0 ;;
+	--stop)
+		if pkill -f "board_server.py --port $port( |$)"; then echo "stopped board on :$port"; else echo "no board on :$port"; fi
+		exit 0 ;;
+	-h | --help) usage; exit 0 ;;
+	*) usage >&2; exit 2 ;;
+	esac
+	shift
+done
+
+python3 "$home/boardctl.py" --port "$port" start >/dev/null
+((open)) && python3 "$home/boardctl.py" --port "$port" open >/dev/null 2>&1 &
+
+cat <<EOF
+Voice whiteboard running: http://127.0.0.1:$port
+
+For the agent, paste this line:
+  Read $home/QUICKSTART.md and operate my whiteboard on port $port.
+
+In the browser:
+  drag            move · wheel zoom · empty drag pans
+  double-click    edit a card's text
+  M or Point      mark spots/objects ("this", "here") for the agent · Alt-click marks once
+  shift-click     multi-select · ctrl-click a piece inside a card
+  Delete          remove selection · Ctrl+Z / Ctrl+Shift+Z undo / redo
+  Space           physics on/off · 3D button, then right-drag orbits
+  Commands        type raw JSON commands yourself
+
+Stop: voice-whiteboard --stop
+EOF

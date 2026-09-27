@@ -1,0 +1,18 @@
+[
+  {"op":"define","name":"pyramid","items":[
+    {"id":"outline","type":"path","points":[[0,-100],[-90,55],[0,95],[90,55],[0,-100]],"color":"#ffd479","strokeWidth":3},
+    {"id":"ridge","type":"line","points":[[0,-100],[0,95]],"color":"#ffd479","strokeWidth":3},
+    {"id":"back","type":"path","points":[[-90,55],[0,20],[90,55]],"color":"#b58c49"},
+    {"id":"hidden","type":"line","points":[[0,-100],[0,20]],"color":"#b58c49"}
+  ]},
+  {"op":"create","object":{"id":"dot","type":"dot","color":"#ff596b","radius":6,"body":true,"tags":["test"]},"count":50,"spread":260,"seed":9,"duration":160,"stagger":8},
+  {"op":"spawn","template":"pyramid","id":"pyramid","x":-400,"y":-20,"body":true},
+  {"op":"create","items":[
+    {"id":"note","type":"card","x":-420,"y":-370,"width":300,"height":160,"title":"A place to think","text":"Objects, words, code and relationships.\nSpeak to build and change them.","color":"#87acd9","pinned":true},
+    {"id":"anchor","type":"card","x":60,"y":-360,"width":240,"height":130,"title":"An anchored idea","text":"Pinned in place. Connections can act like springs.","color":"#ad98e5","body":true,"pinned":true},
+    {"id":"possibility","type":"card","x":390,"y":-310,"width":240,"height":130,"title":"A possibility","text":"Movable, linkable, revisable.","color":"#82c9b0","body":true},
+    {"id":"code","type":"code","x":340,"y":120,"width":300,"height":165,"title":"Code is a prop too","text":"[idea]\nname = \"a possibility\"\n\n# Replace this when we begin.","color":"#82c9b0"}
+  ]},
+  {"op":"link","id":"spring","from":"anchor","to":"possibility","props":{"text":"explore","rest":350,"strength":1.5,"color":"#a494cc"}},
+  {"op":"fit"}
+]

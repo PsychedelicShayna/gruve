@@ -1,0 +1,7 @@
+__pycache__/
+data/
+*.pyc
+board-preview.png
+browser-report.json
+browser-report-final.json
+events.jsonl
