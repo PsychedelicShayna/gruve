@@ -507,7 +507,8 @@ def root_of(scene, i):
 
 def world_position(scene, i):
     """World origin of i. A child of a laid-out group sits where the layout put it, which the
-    browser reports as box.ox/oy; its stored x,y are ignored by the renderer."""
+    browser reports as box.ox/oy; its stored x,y are ignored by the renderer. The reported offset
+    from the parent's reported origin is used, so a parent moved since the report still counts."""
     objs = scene['objects']
     x = y = z = 0
     while i is not None:
@@ -515,9 +516,14 @@ def world_position(scene, i):
         parent = o.get('parent')
         box = o.get('box') or {}
         if parent is not None and objs[parent].get('layout') and 'ox' in box and 'oy' in box:
-            return x + box['ox'], y + box['oy'], z + o.get('z', 0) + world_position(scene, parent)[2]
-        x += o.get('x', 0)
-        y += o.get('y', 0)
+            pbox = objs[parent].get('box') or {}
+            if 'ox' not in pbox or 'oy' not in pbox:
+                return x + box['ox'], y + box['oy'], z + o.get('z', 0) + world_position(scene, parent)[2]
+            x += box['ox'] - pbox['ox']
+            y += box['oy'] - pbox['oy']
+        else:
+            x += o.get('x', 0)
+            y += o.get('y', 0)
         z += o.get('z', 0)
         i = parent
     return x, y, z
@@ -620,13 +626,15 @@ def operation(scene, c):
         for child in old_children - new_ids:
             objs.pop(child, None)
         for o in fresh_objs:
+            # Browser reports survive until the next ack, so a laid-out child keeps its origin.
+            reported = {k: objs[o['id']][k] for k in ('box', 'measured') if o['id'] in objs and k in objs[o['id']]}
             if o['id'] in objs and o['id'] != i:
                 objs[o['id']].clear()
-                objs[o['id']].update(o)
+                objs[o['id']].update(o, **reported)
             elif o['id'] == i:
                 keep_parent = inst.get('parent')
                 inst.clear()
-                inst.update(o)
+                inst.update(o, **reported)
                 if keep_parent is not None:
                     inst['parent'] = keep_parent
             else:
@@ -799,6 +807,8 @@ def operation(scene, c):
                 raise ValueError('reparent into must be a group id or null for the root')
             if into is not None and objs[into].get('preset'):
                 raise ValueError('cannot reparent into a preset instance; ungroup it or set resetOverrides on a define')
+            if into is not None and instance_of(scene, into):
+                objs[instance_of(scene, into)]['overridden'] = True
             for i in selected:
                 if objs[i]['type'] == 'edge':
                     raise ValueError('edges are root objects')
@@ -860,11 +870,17 @@ def operation(scene, c):
                 objs[i]['y'] = objs[i].get('y', 0) - gy
                 if gz:
                     objs[i]['z'] = objs[i].get('z', 0) - gz
+            owner = instance_of(scene, gid)
+            if owner:
+                objs[owner]['overridden'] = True
             validate_object(g)
         elif op == 'ungroup':
             for i in selected:
                 if objs[i]['type'] != 'group':
                     raise ValueError('ungroup selects groups only')
+                parent = objs[i].get('parent')
+                if parent is not None and objs[parent].get('layout'):
+                    raise ValueError(f'{i} sits in the laid-out group {parent}; reparent it out before ungrouping')
             for i in selected:
                 parent = objs[i].get('parent')
                 owner = instance_of(scene, i)

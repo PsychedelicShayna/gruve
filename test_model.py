@@ -236,5 +236,33 @@ class ModelTests(unittest.TestCase):
                   {'op': 'create', 'object': {'id': 'a', 'type': 'rect', 'w': 1, 'h': 1}, 'duration': float('nan')}):
             with self.assertRaises(ValueError): self.runop(**c)
 
+    def test_reported_layout_origin_follows_a_moved_parent(self):
+        self.runop(op='create', items=[{'id': 'L', 'type': 'group', 'layout': {'type': 'stack'}}, {'id': 'r', 'type': 'rect', 'w': 5, 'h': 5}])
+        self.runop(op='reparent', select='r', into='L')
+        self.s['objects']['L']['box'] = {'x': 0, 'y': 0, 'w': 5, 'h': 5, 'ox': 0, 'oy': 0}
+        self.s['objects']['r']['box'] = {'x': 8, 'y': 8, 'w': 5, 'h': 5, 'ox': 8, 'oy': 8}
+        self.runop(op='move', select='L', by=[100, 0])
+        self.runop(op='reparent', select='r', into=None)
+        self.assertEqual((self.s['objects']['r']['x'], self.s['objects']['r']['y']), (108, 8))
+
+    def test_ungroup_inside_a_layout_is_refused(self):
+        self.runop(op='create', items=[{'id': 'L', 'type': 'group', 'layout': {'type': 'stack'}}, {'id': 'G', 'type': 'group'}])
+        self.runop(op='reparent', select='G', into='L')
+        with self.assertRaisesRegex(ValueError, 'laid-out'): self.runop(op='ungroup', select='G')
+
+    def test_reexpansion_keeps_reported_boxes(self):
+        self.card(); self.s['objects']['c/body']['box'] = {'x': 1, 'y': 2, 'w': 3, 'h': 4, 'ox': 1, 'oy': 2}
+        self.runop(op='set', select='c', props={'text': 'longer'})
+        self.assertEqual(self.s['objects']['c/body']['box']['ox'], 1)
+
+    def test_structural_edits_inside_a_preset_are_protected(self):
+        self.runop(op='create', object={'id': 'k', 'type': 'cube', 'size': 50})
+        self.runop(op='group', id='pair', select=self.s['objects']['k']['children'][:2])
+        with self.assertRaisesRegex(ValueError, 'resetOverrides'): self.runop(op='set', select='k', props={'size': 60})
+        self.runop(op='create', items=[{'id': 't', 'type': 'table', 'rows': [['a', 'b']], 'cols': 2}, {'id': 'extra', 'type': 'rect', 'w': 1, 'h': 1}])
+        cell = next(i for i in self.s['objects']['t']['children'] if self.s['objects'][i]['type'] == 'group')
+        self.runop(op='reparent', select='extra', into=cell)
+        with self.assertRaisesRegex(ValueError, 'resetOverrides'): self.runop(op='set', select='t', props={'cols': 1})
+
 
 if __name__ == '__main__': unittest.main()

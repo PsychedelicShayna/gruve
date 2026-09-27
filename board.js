@@ -562,15 +562,16 @@ canvas.ondblclick=e=>{
 };
 $('editor').onsubmit=e=>{
   e.preventDefault();if(!editorId)return;
-  const id=editorId.target,o=objects.get(id);
+  const id=editorId.target,o=objects.get(id),params={text:$('text').value,...(editorId.title?{title:$('title').value}:{})};
+  let command={op:'set',select:id,props:editorId.params?params:{text:$('text').value}};
   if(editorId.params&&o?.overridden){
-    const title=objects.get(id+'/title'),body=objects.get(id+'/body'),cmds=[];
-    if(editorId.title&&title?.type==='text')cmds.push({op:'set',select:id+'/title',props:{text:$('title').value}});
-    if(body?.type==='text')cmds.push({op:'set',select:id+'/body',props:{text:$('text').value}});
-    if(cmds.length)send(cmds).catch(()=>{});
-    else send({op:'set',select:id,props:{text:$('text').value,...(editorId.title?{title:$('title').value}:{})}}).catch(()=>{});
-  }else send({op:'set',select:id,props:editorId.params?{text:$('text').value,...(editorId.title?{title:$('title').value}:{})}:{text:$('text').value}}).catch(()=>{});
-  $('editor').hidden=true;
+    // Keep the driver's child fixes: edit the text children, but only when every shown field has one;
+    // otherwise the parameter set is refused with a toast rather than half-applied.
+    const children=Object.keys(params).map(k=>[k,objects.get(`${id}/${k==='text'?'body':'title'}`)]);
+    if(children.every(([,c])=>c?.type==='text'))command=children.map(([k,c])=>({op:'set',select:c.id,props:{text:params[k]}}));
+  }
+  // The editor closes only once the board accepts the edit, so a refusal never loses the typed text.
+  send(command).then(()=>{$('editor').hidden=true;}).catch(()=>{});
 };
 $('fit').onclick=fit;
 $('undo').onclick=()=>send({op:'undo'}).catch(()=>{});
