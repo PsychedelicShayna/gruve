@@ -1,2 +1,3 @@
 target/
-/.omp/
+/.omp/*
+!/.omp/skills/
