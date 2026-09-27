@@ -83,6 +83,7 @@ function fitTarget(ids){
 }
 function viewTargetFor(c){
   if(c.mode)setMode(c.mode);
+  else if(c.yaw!==undefined||c.pitch!==undefined)setMode('3d');
   const target={};
   if(c.fit!==undefined)Object.assign(target,fitTarget(c.fit===true?null:c.selected)||{});
   else{
@@ -119,7 +120,7 @@ function ack(stage,n,full=false){
   const body={client,stage,seq:n,time:Date.now(),visible:!document.hidden,view:viewSummary()};
   if(full){
     body.positions=Object.fromEntries([...objects.values()].filter(isRoot).map(o=>[o.id,{x:o.x||0,y:o.y||0,z:o.z||0,vx:o.vx||0,vy:o.vy||0}]));
-    body.boxes=Object.fromEntries([...layout.boxes].map(([id,b])=>[id,{x:Math.round(b.x*10)/10,y:Math.round(b.y*10)/10,w:Math.round(b.w*10)/10,h:Math.round(b.h*10)/10}]));
+    body.boxes=Object.fromEntries([...layout.boxes].map(([id,b])=>[id,{x:Math.round(b.x*10)/10,y:Math.round(b.y*10)/10,w:Math.round(b.w*10)/10,h:Math.round(b.h*10)/10,ox:Math.round(b.ox*10)/10,oy:Math.round(b.oy*10)/10}]));
     body.measured=Object.fromEntries(layout.measured);
   }
   fetch('/ack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).catch(()=>{});
@@ -286,15 +287,23 @@ function render(){
 function elementFor(o){let g=elements.get(o.id);if(!g){g=svg('g',{'data-id':o.id});elements.set(o.id,g);}return g;}
 function descendantsOf(o,out=[]){for(const c of o.children||[]){const child=objects.get(c);if(child){out.push(child);descendantsOf(child,out);}}return out;}
 function render3d(){
-  const C=cam(),units=[],boxes=new Map();
+  const C=cam(),units=[],boxes=new Map(),depths=new Map();
   const visit=(o,off)=>{
     const ox=off.x+(o.x||0),oy=off.y+(o.y||0),oz=off.z+(o.z||0),g=elementFor(o);
     if(o.type==='group'&&!o.layout){
       g.replaceChildren();g.removeAttribute('transform');g.dataset.signature='';
-      if(g.parentNode!==shapeLayer)shapeLayer.append(g);
       for(const c of o.children||[]){const child=objects.get(c);if(child)visit(child,{x:ox,y:oy,z:oz});}
       const kids=(o.children||[]).map(c=>boxes.get(c)).filter(Boolean);
       if(kids.length){const x=Math.min(...kids.map(b=>b.x)),y=Math.min(...kids.map(b=>b.y));boxes.set(o.id,{x,y,w:Math.max(...kids.map(b=>b.x+b.w))-x,h:Math.max(...kids.map(b=>b.y+b.h))-y,ox:x,oy:y});}
+      const childDepths=(o.children||[]).map(c=>depths.get(c)).filter(d=>d!==undefined);
+      if(childDepths.length)depths.set(o.id,Math.max(...childDepths));
+      if((o.outline||o.title)&&boxes.has(o.id)){
+        const b=boxes.get(o.id),S=project({x:ox,y:oy,z:oz},C).scale||view.z;
+        attrsTo(g,{class:'object group'+(selected.has(o.id)?' selected':''),opacity:o.opacity??1});
+        g.append(svg('rect',{class:'shape outline',x:b.x-20*S,y:b.y-28*S,width:b.w+40*S,height:b.h+48*S,rx:15*S,fill:'none',stroke:o.color||'#8eaede','stroke-width':(o.strokeWidth??1.6)*S,'stroke-dasharray':`${7*S} ${5*S}`}));
+        if(o.title){const t=svg('text',{x:b.x-9*S,y:b.y-36*S,fill:o.color||'#8eaede'});t.style.fontSize=(13*S)+'px';t.textContent=o.title;g.append(t);}
+        units.push({depth:(depths.get(o.id)??project({x:ox,y:oy,z:oz},C).depth)+1,el:g});
+      }else g.remove();
       return;
     }
     if(o.type==='polygon'||o.type==='polyline'){
@@ -309,9 +318,8 @@ function render3d(){
       }else{const tmp=svg('g');drawPolyline(tmp,{...o,points:proj.map(p=>[p.x,p.y])});g.append(...tmp.children);}
       const xs=proj.map(p=>p.x),ys=proj.map(p=>p.y),x=Math.min(...xs),y=Math.min(...ys);
       boxes.set(o.id,{x,y,w:Math.max(...xs)-x,h:Math.max(...ys)-y,ox:x,oy:y,pts:proj});
-      units.push({depth,el:g});return;
+      depths.set(o.id,depth);units.push({depth,el:g});return;
     }
-    // billboard
     const P=project({x:ox,y:oy,z:oz},C);
     draw(o);for(const d of descendantsOf(o))draw(d);
     for(const d of descendantsOf(o))if(d.type==='group')for(const c of d.children||[]){const el=elements.get(c);if(el&&el.parentNode===elements.get(d.id))elements.get(d.id).append(el);}
@@ -319,22 +327,32 @@ function render3d(){
     const local=layout.locals.get(o.id)||{bx:0,by:0,w:0,h:0},ob=layout.boxes.get(o.id);
     boxes.set(o.id,{x:P.x+local.bx*P.scale,y:P.y+local.by*P.scale,w:local.w*P.scale,h:local.h*P.scale,ox:P.x,oy:P.y});
     for(const d of descendantsOf(o)){const lb=layout.boxes.get(d.id);if(lb&&ob)boxes.set(d.id,{x:P.x+(lb.x-ob.ox)*P.scale,y:P.y+(lb.y-ob.oy)*P.scale,w:lb.w*P.scale,h:lb.h*P.scale,ox:P.x+(lb.ox-ob.ox)*P.scale,oy:P.y+(lb.oy-ob.oy)*P.scale});}
+    depths.set(o.id,P.depth);for(const d of descendantsOf(o))depths.set(d.id,P.depth);
     units.push({depth:P.depth,el:g});
   };
   for(const o of objects.values())if(isRoot(o)&&o.type!=='edge')visit(o,{x:0,y:0,z:0});
+  const projected=a=>Array.isArray(a)?(p=>[p.x,p.y])(project({x:a[0],y:a[1],z:a[2]||0},C)):a;
+  const anchorDepth=a=>Array.isArray(a)?project({x:a[0]||0,y:a[1]||0,z:a[2]||0},C).depth:(()=>{const id=typeof a==='string'?a:a?.id;return id!=null&&depths.has(id)?depths.get(id):null;})();
+  for(const o of objects.values())if(o.type==='edge'){
+    const g=elementFor(o);g.removeAttribute('transform');g.replaceChildren();g.dataset.signature='';
+    attrsTo(g,{class:'object edge'+(selected.has(o.id)?' selected':''),opacity:o.opacity??1});
+    drawEdge(g,{...o,from:projected(o.from),to:projected(o.to)},boxes);
+    const ds=[anchorDepth(o.from),anchorDepth(o.to)].filter(Number.isFinite);
+    units.push({depth:ds.length?ds.reduce((s,d)=>s+d,0)/ds.length:DIST,el:g});
+  }
   units.sort((a,b)=>b.depth-a.depth);
   for(const u of units)shapeLayer.append(u.el);
-  const projected=a=>Array.isArray(a)?(p=>[p.x,p.y])(project({x:a[0],y:a[1],z:a[2]||0},C)):a;
-  for(const o of objects.values())if(o.type==='edge'){const g=elementFor(o);if(g.parentNode!==edgeLayer)edgeLayer.append(g);g.removeAttribute('transform');g.replaceChildren();attrsTo(g,{class:'object edge'+(selected.has(o.id)?' selected':''),opacity:o.opacity??1});drawEdge(g,{...o,from:projected(o.from),to:projected(o.to)},boxes);}
   boxes3d=boxes;
 }
 
 // ---------- command execution ----------
 async function execute(e,generation){
   const c=e.command||{};
+  const clampTime=v=>{const n=+v;return Number.isFinite(n)?Math.min(10000,Math.max(0,n)):0;};
+  const duration=clampTime(e.duration),stagger=clampTime(e.stagger);
   if(e.op==='view'){
     $('activity').textContent='view';
-    await animateCamera(viewTargetFor({...c,selected:e.selected}),c.duration??300,generation);
+    await animateCamera(viewTargetFor({...c,selected:e.selected}),duration,generation);
     if(generation!==epoch)return;
     seq=e.seq;ack('firstFrame',seq);ack('done',seq,queue.length===0);$('activity').textContent='Ready';dirty=true;return;
   }
@@ -348,7 +366,7 @@ async function execute(e,generation){
     return next;
   });
   const removes=e.patch.remove,ids=[...new Set([...targets.map(o=>o.id),...removes])];
-  const duration=e.duration||0,stagger=Math.min(e.stagger||0,1000/Math.max(1,ids.length-1)),total=duration+stagger*Math.max(0,ids.length-1);
+  const spread=Math.min(stagger,1000/Math.max(1,ids.length-1)),total=duration+spread*Math.max(0,ids.length-1);
   const motionLocks=new Set();
   for(const id of ids){
     if(objects.has(id))old.set(id,structuredClone(objects.get(id)));
@@ -363,7 +381,7 @@ async function execute(e,generation){
     const elapsed=now-start;
     for(let index=0;index<ids.length;index++){
       const id=ids[index],before=old.get(id),after=targets.find(o=>o.id===id);
-      const t=duration?Math.max(0,Math.min(1,(elapsed-index*stagger)/duration)):(elapsed>=index*stagger?1:0),ease=1-(1-t)**3;
+      const t=duration?Math.max(0,Math.min(1,(elapsed-index*spread)/duration)):(elapsed>=index*spread?1:0),ease=1-(1-t)**3;
       if(removes.includes(id)){
         if(t>=1)objects.delete(id);else if(before)objects.set(id,{...before,opacity:(before.opacity??1)*(1-ease)});
       }else if(after){
@@ -534,13 +552,25 @@ canvas.ondblclick=e=>{
   const id=rootFor(raw,objects),edit=editableTextOf(id)||editableTextOf(raw);if(!edit)return;
   const o=objects.get(edit.target);editorId=edit;
   $('guide').hidden=false;$('editor').hidden=false;$('title').parentElement.hidden=!edit.title;
-  $('title').value=edit.params?(o.params?.title||''):'';$('text').value=edit.params?(o.params?.text||''):(o.text||'');$('selection').textContent=edit.target;
+  if(edit.params){
+    const preset=presets[o.preset]?.params||{},titleChild=objects.get(edit.target+'/title'),bodyChild=objects.get(edit.target+'/body');
+    $('title').value=o.overridden&&titleChild?.type==='text'?titleChild.text||'':(o.params?.title??preset.title??'');
+    $('text').value=o.overridden&&bodyChild?.type==='text'?bodyChild.text||'':(o.params?.text??preset.text??'');
+  }else{$('title').value='';$('text').value=o.text||'';}
+  $('selection').textContent=edit.target;
   (edit.title?$('title'):$('text')).focus();
 };
 $('editor').onsubmit=e=>{
   e.preventDefault();if(!editorId)return;
-  const props=editorId.params?{text:$('text').value,...(editorId.title?{title:$('title').value}:{})}:{text:$('text').value};
-  send({op:'set',select:editorId.target,props,resetOverrides:true}).catch(()=>{});$('editor').hidden=true;
+  const id=editorId.target,o=objects.get(id);
+  if(editorId.params&&o?.overridden){
+    const title=objects.get(id+'/title'),body=objects.get(id+'/body'),cmds=[];
+    if(editorId.title&&title?.type==='text')cmds.push({op:'set',select:id+'/title',props:{text:$('title').value}});
+    if(body?.type==='text')cmds.push({op:'set',select:id+'/body',props:{text:$('text').value}});
+    if(cmds.length)send(cmds).catch(()=>{});
+    else send({op:'set',select:id,props:{text:$('text').value,...(editorId.title?{title:$('title').value}:{})}}).catch(()=>{});
+  }else send({op:'set',select:id,props:editorId.params?{text:$('text').value,...(editorId.title?{title:$('title').value}:{})}:{text:$('text').value}}).catch(()=>{});
+  $('editor').hidden=true;
 };
 $('fit').onclick=fit;
 $('undo').onclick=()=>send({op:'undo'}).catch(()=>{});

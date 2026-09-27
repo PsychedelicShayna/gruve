@@ -54,7 +54,7 @@ export function resolve(objects,measure){
       if(lay?.type==='row')return sizes.reduce((s,b)=>s+b.bw,0)+gap*Math.max(0,sizes.length-1)+2*p;
       if(lay?.type==='grid'){
         const cols=Math.max(1,lay.cols|0);const colW=[];
-        contributors.forEach((k,i)=>{const c=i%cols;colW[c]=Math.max(colW[c]||0,sizes[i].bw);});
+        content.forEach((k,i)=>{const c=i%cols;if(colW[c]===undefined)colW[c]=0;if(!isFill(k.w))colW[c]=Math.max(colW[c],sizeOf(k,{w:null,h:null}).bw);});
         return colW.reduce((s,v)=>s+v,0)+gap*Math.max(0,colW.length-1)+2*p;
       }
       if(lay?.type==='stack')return Math.max(0,...sizes.map(b=>b.bw))+2*p;
@@ -72,7 +72,7 @@ export function resolve(objects,measure){
     const hugKids=sized.filter(s=>!isFill(s.k.h));
     if(lay?.type==='grid'){
       const cols=Math.max(1,lay.cols|0);colW=[];rowsH=[];
-      sized.forEach((s,i)=>{const c=i%cols,r=(i/cols)|0;colW[c]=Math.max(colW[c]||0,s.b.bw);rowsH[r]=Math.max(rowsH[r]||0,s.b.bh);});
+      sized.forEach((s,i)=>{const c=i%cols,r=(i/cols)|0;if(colW[c]===undefined)colW[c]=0;if(rowsH[r]===undefined)rowsH[r]=0;if(!isFill(s.k.w))colW[c]=Math.max(colW[c],s.b.bw);if(!isFill(s.k.h))rowsH[r]=Math.max(rowsH[r],s.b.bh);else if(s.b.bh)rowsH[r]=Math.max(rowsH[r],s.b.bh);});
     }
     const hugH=()=>{
       if(lay?.type==='stack')return sized.reduce((s,x)=>s+x.b.bh,0)+gap*Math.max(0,sized.length-1)+2*p;

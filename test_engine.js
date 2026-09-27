@@ -51,6 +51,14 @@ test('grid tracks are content sized and fill cells stretch to their row',()=>{
   assert.equal(boxes.get('c').y,boxes.get('a').y+boxes.get('a').h);
   assert.equal(boxes.get('b').x,boxes.get('a').x+100);
 });
+test('a fill cell keeps its grid index and stays inside the group box',()=>{
+  const m=scene({id:'g',type:'group',layout:{type:'grid',cols:2},children:['a','b','c']},{id:'a',type:'rect',parent:'g',w:'fill',h:10},{id:'b',type:'rect',parent:'g',w:40,h:10},{id:'c',type:'rect',parent:'g',w:30,h:10});
+  const {boxes}=resolve(m,measure);
+  const g=boxes.get('g');
+  assert.equal(boxes.get('b').x,30);
+  assert.equal(boxes.get('a').w,30);
+  for(const id of ['a','b','c']){const k=boxes.get(id);assert.ok(k.x>=g.x&&k.y>=g.y&&k.x+k.w<=g.x+g.w+1e-6&&k.y+k.h<=g.y+g.h+1e-6,id);}
+});
 test('row layout places children left to right with gaps',()=>{
   const m=scene({id:'r',type:'group',layout:{type:'row',gap:10},padding:5,children:['a','b']},{id:'a',type:'rect',parent:'r',w:30,h:10},{id:'b',type:'rect',parent:'r',w:20,h:40});
   const {boxes}=resolve(m,measure);
