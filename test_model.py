@@ -160,5 +160,81 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(new['objects']['b']['parent'], 'g'); self.assertEqual(new['objects']['b']['x'], 400)
         self.assertTrue(new['physics']['enabled'])
 
+    def test_upgrade_nested_groups_ignore_key_order_and_keep_edges_as_roots(self):
+        old = {'objects': {
+            'A': {'id': 'A', 'type': 'group', 'x': 10, 'y': 20, 'members': ['B', 'L']},
+            'B': {'id': 'B', 'type': 'group', 'x': 110, 'y': 20, 'members': ['C']},
+            'C': {'id': 'C', 'type': 'rectangle', 'x': 110, 'y': 70},
+            'L': {'id': 'L', 'type': 'line', 'from': 'B', 'to': 'C'},
+        }}
+        new = upgrade(old)['objects']
+        self.assertEqual((new['C']['x'] + new['B']['x'] + new['A']['x'], new['C']['y'] + new['B']['y'] + new['A']['y']), (110, 70))
+        self.assertNotIn('parent', new['L']); self.assertEqual(new['A']['children'], ['B'])
+
+    # ---- adversarial review regressions
+    def test_nested_preset_child_edit_is_protected(self):
+        self.runop(op='create', object={'id': 't', 'type': 'table', 'rows': [['a', 'b'], ['c', 'd']], 'cols': 2})
+        cell = next(i for i, o in self.s['objects'].items() if o['type'] == 'text' and o['parent'] != 't' and o.get('text') == 'a')
+        self.runop(op='set', select=cell, props={'text': 'FIXED'})
+        with self.assertRaisesRegex(ValueError, 'resetOverrides'): self.runop(op='set', select='t', props={'cols': 1})
+
+    def test_moving_a_preset_child_is_protected(self):
+        self.runop(op='create', object={'id': 'k', 'type': 'cube', 'size': 50}); self.runop(op='move', select='k/back', by=[5, 0])
+        with self.assertRaisesRegex(ValueError, 'resetOverrides'): self.runop(op='set', select='k', props={'size': 60})
+
+    def test_group_props_cannot_impersonate_a_preset(self):
+        self.runop(op='create', items=[{'id': 'p', 'type': 'rect', 'w': 5, 'h': 5}, {'id': 'q', 'type': 'rect', 'w': 5, 'h': 5}])
+        with self.assertRaisesRegex(ValueError, 'preset'): self.runop(op='group', id='g', select=['p', 'q'], props={'preset': 'card'})
+
+    def test_group_origin_from_props_keeps_member_world_positions(self):
+        self.runop(op='create', items=[{'id': 'p', 'type': 'rect', 'x': 100, 'y': 0, 'z': 15, 'w': 5, 'h': 5}, {'id': 'q', 'type': 'rect', 'x': 200, 'y': 0, 'w': 5, 'h': 5}])
+        self.runop(op='group', id='g', select=['p', 'q'], props={'x': 0, 'z': 100})
+        o = self.s['objects']
+        self.assertEqual((o['g']['x'] + o['p']['x'], o['g']['z'] + o['p']['z']), (100, 15))
+        self.runop(op='ungroup', select='g')
+        p = self.s['objects']['p']
+        self.assertEqual((p['x'], p.get('z', 0)), (100, 15))
+
+    def test_reparent_keeps_world_z(self):
+        self.runop(op='create', items=[{'id': 'g', 'type': 'group', 'z': 50}, {'id': 'r', 'type': 'rect', 'z': 12, 'w': 5, 'h': 5}])
+        self.runop(op='reparent', select='r', into='g')
+        self.assertEqual(self.s['objects']['r']['z'], -38)
+        self.runop(op='reparent', select='r', into=None)
+        self.assertEqual(self.s['objects']['r']['z'], 12)
+
+    def test_reparent_out_of_layout_uses_reported_origin(self):
+        self.runop(op='create', items=[{'id': 'g', 'type': 'group', 'x': 100, 'y': 200, 'layout': {'type': 'stack'}}, {'id': 'r', 'type': 'rect', 'x': 999, 'y': 999, 'w': 5, 'h': 5}])
+        self.runop(op='reparent', select='r', into='g')
+        self.s['objects']['r']['box'] = {'x': 100, 'y': 200, 'w': 5, 'h': 5, 'ox': 100, 'oy': 200}
+        self.runop(op='reparent', select='r', into=None)
+        self.assertEqual((self.s['objects']['r']['x'], self.s['objects']['r']['y']), (100, 200))
+
+    def test_builtin_presets_cannot_be_redefined(self):
+        with self.assertRaisesRegex(ValueError, 'built-in'):
+            self.runop(op='define', preset={'name': 'card', 'params': {}, 'items': [{'id': 'a', 'type': 'rect', 'w': 1, 'h': 1}]})
+
+    def test_reexpand_refuses_to_overwrite_unrelated_object(self):
+        self.runop(op='define', preset={'name': 'clash', 'params': {'items': ['a']}, 'items': [{'repeat': 'items', 'items': [{'id': '${item}', 'type': 'rect', 'w': 1, 'h': 1}]}]})
+        self.runop(op='create', items=[{'id': 'inst/x', 'type': 'ellipse', 'r': 9}, {'id': 'inst', 'type': 'clash'}])
+        with self.assertRaisesRegex(ValueError, 'unrelated'): self.runop(op='set', select='inst', props={'items': ['a', 'x']})
+
+    def test_expansion_size_is_capped_before_materializing(self):
+        big = list(range(500))
+        d = {'name': 'cube3', 'params': {'n': big}, 'items': [{'repeat': 'n', 'items': [{'repeat': 'n', 'as': 'j', 'index': 'k', 'items': [{'id': 'c${item}-${j}', 'type': 'rect', 'w': 1, 'h': 1}]}]}]}
+        with self.assertRaisesRegex(ValueError, '2000'): self.runop(op='define', preset=d)
+
+    def test_preset_group_cannot_replace_children(self):
+        with self.assertRaisesRegex(ValueError, 'children'):
+            self.runop(op='define', preset={'name': 'bad', 'params': {}, 'items': [{'id': 'a', 'type': 'rect', 'w': 1, 'h': 1}], 'group': {'children': 'x'}})
+
+    def test_paint_accepts_colours_not_urls(self):
+        self.runop(op='create', object={'id': 'r', 'type': 'rect', 'w': 1, 'h': 1, 'fill': 'none', 'color': 'rgba(10, 20, 30, .5)'})
+        with self.assertRaisesRegex(ValueError, 'colour'): self.runop(op='set', select='r', props={'fill': 'url(https://example.invalid/x.svg)'})
+
+    def test_malformed_commands_raise_value_errors(self):
+        for c in ({'op': 'create', 'object': 'x', 'count': 2}, {'op': 'physics', 'props': ['enabled']}, {'op': 'layout', 'select': {}, 'mode': 'spiral'},
+                  {'op': 'create', 'object': {'id': 'a', 'type': 'rect', 'w': 1, 'h': 1}, 'duration': float('nan')}):
+            with self.assertRaises(ValueError): self.runop(**c)
+
 
 if __name__ == '__main__': unittest.main()

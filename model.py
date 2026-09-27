@@ -17,6 +17,8 @@ ROUTES = {'straight', 'curve', 'elbow'}
 SIDES = {'left', 'right', 'top', 'bottom'}
 FONTS = {'sans', 'mono'}
 ALIGNS = {'left', 'center', 'right'}
+# Paint values reach SVG fill/stroke attributes: colours only, never url(...) references.
+COLOR = re.compile(r'#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,30}|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]{1,80}\)')
 LAYOUTS = {'stack', 'row', 'grid'}
 
 COMMON = {'id', 'type', 'x', 'y', 'z', 'tags', 'opacity', 'pinned', 'body', 'mass', 'vx', 'vy', 'parent', 'preset', 'params', 'overridden', 'box', 'measured'}
@@ -122,6 +124,9 @@ def validate_object(o):
     for k in ('text', 'color', 'fill', 'label', 'title'):
         if k in o and (not isinstance(o[k], str) or len(o[k]) > 20000):
             raise ValueError(k + ' must be text')
+    for k in ('color', 'fill'):
+        if k in o and not COLOR.fullmatch(o[k]):
+            raise ValueError(f'{k} must be a colour: #rgb, #rrggbb, a colour name, rgb()/hsl(), or none')
     for k in ('pinned', 'body', 'smooth', 'outline', 'overridden'):
         if k in o and not isinstance(o[k], bool):
             raise ValueError(k + ' must be boolean')
@@ -323,7 +328,11 @@ def substitute(value, params):
                 raise ValueError(f'unknown parameter {m.group(1)}')
             v = params[m.group(1)]
             return v if isinstance(v, str) else json.dumps(v)
-        return _INTERP.sub(rep, value)
+        parts = [rep(m) for m in _INTERP.finditer(value)]
+        if sum(map(len, parts)) + len(value) > 100000:
+            raise ValueError('substituted text is longer than 100000 characters')
+        it = iter(parts)
+        return _INTERP.sub(lambda m: next(it), value)
     return value
 
 
@@ -352,6 +361,8 @@ def expand_items(items, params, out, depth=0):
             for n, element in enumerate(seq):
                 expand_items(item.get('items', []), {**params, alias: element, index: n}, out, depth + 1)
             continue
+        if len(out) >= 2000:
+            raise ValueError('preset expands to more than 2000 objects')
         out.append(substitute({k: v for k, v in item.items() if k != 'when'}, params))
     return out
 
@@ -410,7 +421,11 @@ def expand(definition, given, instance_id, x, y, instance_fields):
         o.pop('parent', None)
         validate_object(o)
         return [o]
-    group = {'type': 'group', 'children': [], **substitute(definition.get('group', {}), params), **meta, 'id': instance_id, 'x': x, 'y': y}
+    shell = substitute(definition.get('group', {}), params)
+    reserved = (READ_ONLY | {'id', 'type', 'children'}) & set(shell)
+    if reserved:
+        raise ValueError('preset group cannot set ' + ', '.join(sorted(reserved)))
+    group = {**shell, 'type': 'group', 'children': [], **meta, 'id': instance_id, 'x': x, 'y': y}
     out = [group]
     by_id = {instance_id: group}
     for o in items:
@@ -491,23 +506,48 @@ def root_of(scene, i):
 
 
 def world_position(scene, i):
+    """World origin of i. A child of a laid-out group sits where the layout put it, which the
+    browser reports as box.ox/oy; its stored x,y are ignored by the renderer."""
     objs = scene['objects']
-    x = y = 0
+    x = y = z = 0
     while i is not None:
-        x += objs[i].get('x', 0)
-        y += objs[i].get('y', 0)
-        i = objs[i].get('parent')
-    return x, y
+        o = objs[i]
+        parent = o.get('parent')
+        box = o.get('box') or {}
+        if parent is not None and objs[parent].get('layout') and 'ox' in box and 'oy' in box:
+            return x + box['ox'], y + box['oy'], z + o.get('z', 0) + world_position(scene, parent)[2]
+        x += o.get('x', 0)
+        y += o.get('y', 0)
+        z += o.get('z', 0)
+        i = parent
+    return x, y, z
 
 
 def instance_of(scene, i):
-    """The preset instance that owns object i, if i is a child of one."""
+    """The preset instance that owns object i (nearest preset ancestor), if i is inside one."""
     objs = scene['objects']
     p = objs[i].get('parent')
-    return p if p is not None and objs[p].get('preset') else None
+    while p is not None:
+        if objs[p].get('preset'):
+            return p
+        p = objs[p].get('parent')
+    return None
 
 
 # ---------------------------------------------------------------- operations
+
+def timing(c):
+    """Validated (duration, stagger) of a command, in milliseconds. Create/remove fade in 180 ms and
+    view glides in 300 ms unless told otherwise; everything else is immediate."""
+    default = 180 if c.get('op') in ('create', 'remove') else 300 if c.get('op') == 'view' else 0
+    out = []
+    for key, fallback in (('duration', default), ('stagger', 0)):
+        v = number(c.get(key, fallback), key)
+        if not 0 <= v <= 10000:
+            raise ValueError(key + ' must be 0..10000 milliseconds')
+        out.append(v)
+    return tuple(out)
+
 
 def operation(scene, c):
     """Mutates a private candidate; the caller commits only after all validation passes."""
@@ -519,10 +559,7 @@ def operation(scene, c):
     allowed = {'create', 'set', 'remove', 'move', 'reparent', 'group', 'ungroup', 'link', 'define', 'undefine', 'physics', 'impulse', 'layout', 'view', 'wait', 'clear'}
     if op not in allowed:
         raise ValueError(f'unknown op {op!r}; ops are ' + ', '.join(sorted(allowed | {'undo', 'redo'})))
-    for key in ('duration', 'stagger'):
-        v = number(c.get(key, 0), key)
-        if not 0 <= v <= 10000:
-            raise ValueError(key + ' must be 0..10000 milliseconds')
+    timing(c)
     presets = presets_of(scene)
 
     def put(o):
@@ -577,6 +614,9 @@ def operation(scene, c):
         fresh_objs = expand(presets[inst['preset']], merged, i, inst.get('x', 0), inst.get('y', 0), fields)
         new_ids = {o['id'] for o in fresh_objs}
         old_children = descendants(scene, [i]) - {i}
+        for o in fresh_objs:
+            if o['id'] in objs and o['id'] != i and o['id'] not in old_children:
+                raise ValueError(f're-expanding {i} would create {o["id"]}, which is an unrelated existing object; remove or rename it first')
         for child in old_children - new_ids:
             objs.pop(child, None)
         for o in fresh_objs:
@@ -605,6 +645,10 @@ def operation(scene, c):
                 add(spec)
         else:
             spec = c.get('object', {})
+            if not isinstance(spec, dict):
+                raise ValueError('create needs object:{...} or items:[...]')
+            if c.get('arrange', 'scatter') not in ('scatter', 'grid'):
+                raise ValueError('arrange must be scatter or grid')
             count = c.get('count', 1)
             if type(count) is not int or not 1 <= count <= 500:
                 raise ValueError('count must be 1..500')
@@ -629,15 +673,15 @@ def operation(scene, c):
         d = c.get('preset')
         if not isinstance(d, dict) or not isinstance(d.get('name'), str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', d['name']):
             raise ValueError('define needs preset:{name, params, items}')
-        if d['name'] in PRIMITIVES:
-            raise ValueError('preset name collides with a primitive type')
+        if d['name'] in PRIMITIVES or d['name'] in BUILTIN_PRESETS:
+            raise ValueError(f'preset name {d["name"]} is a built-in; pick another name')
         validate_preset(d)
         scene.setdefault('presets', {})[d['name']] = copy.deepcopy(d)
     elif op == 'undefine':
         name = c.get('name')
         if name not in scene.get('presets', {}):
             raise ValueError('undefine names a user preset; built-ins cannot be removed')
-        if any(o.get('preset') == name for o in objs.values()) and name not in BUILTIN_PRESETS:
+        if any(o.get('preset') == name for o in objs.values()):
             raise ValueError(f'preset {name} is still in use; remove its instances first')
         del scene['presets'][name]
     elif op == 'link':
@@ -671,6 +715,8 @@ def operation(scene, c):
             raise ValueError('view needs center, by, zoom, fit, mode, yaw or pitch')
     elif op == 'physics':
         props = c.get('props', {})
+        if not isinstance(props, dict):
+            raise ValueError('physics props must be an object')
         if set(props) - set(DEFAULT_PHYSICS):
             raise ValueError('unknown physics property; use ' + ', '.join(sorted(DEFAULT_PHYSICS)))
         for k, v in props.items():
@@ -733,6 +779,10 @@ def operation(scene, c):
             dx, dy = number(delta[0]), number(delta[1])
             dz = number(delta[2]) if len(delta) == 3 else 0
             for i in selected:
+                owner = instance_of(scene, i)
+                if owner and owner not in selected:
+                    objs[owner]['overridden'] = True
+            for i in selected:
                 objs[i]['x'] = objs[i].get('x', 0) + dx
                 objs[i]['y'] = objs[i].get('y', 0) + dy
                 if dz:
@@ -754,24 +804,36 @@ def operation(scene, c):
                     raise ValueError('edges are root objects')
                 if into is not None and into in descendants(scene, [i]):
                     raise ValueError('cannot reparent into a descendant')
-                wx, wy = world_position(scene, i)
+                wx, wy, wz = world_position(scene, i)
+                owner = instance_of(scene, i)
+                if owner:
+                    objs[owner]['overridden'] = True
                 old = objs[i].get('parent')
                 if old is not None:
                     objs[old]['children'] = [k for k in objs[old]['children'] if k != i]
-                    if objs[old].get('preset'):
-                        objs[old]['overridden'] = True
                 if into is None:
                     objs[i].pop('parent', None)
                     objs[i]['x'], objs[i]['y'] = wx, wy
                 else:
-                    px, py = world_position(scene, into)
+                    px, py, pz = world_position(scene, into)
                     objs[i]['parent'] = into
                     objs[i]['x'], objs[i]['y'] = wx - px, wy - py
                     objs[into]['children'].append(i)
+                    wz -= pz
+                if wz:
+                    objs[i]['z'] = wz
+                else:
+                    objs[i].pop('z', None)
         elif op == 'group':
             gid = c.get('id')
             if not isinstance(gid, str):
                 raise ValueError('group needs an id')
+            props = c.get('props', {})
+            if not isinstance(props, dict):
+                raise ValueError('group props must be an object')
+            reserved = (READ_ONLY | {'id', 'type', 'children'}) & set(props)
+            if reserved:
+                raise ValueError('group props cannot set ' + ', '.join(sorted(reserved)))
             if not selected:
                 raise ValueError('group needs at least one selected object')
             parents = {objs[i].get('parent') for i in selected}
@@ -782,9 +844,12 @@ def operation(scene, c):
             parent = parents.pop()
             if parent is not None and objs[parent].get('layout'):
                 raise ValueError('cannot group children of a laid-out group; reparent them first')
-            gx = min(objs[i].get('x', 0) for i in selected)
-            gy = min(objs[i].get('y', 0) for i in selected)
-            g = {'x': gx, 'y': gy, **c.get('props', {}), 'id': gid, 'type': 'group', 'children': list(selected)}
+            # The origin defaults to the members' top-left; x/y/z in props place it instead.
+            # Either way the members keep their positions.
+            gx = number(props['x'], 'x') if 'x' in props else min(objs[i].get('x', 0) for i in selected)
+            gy = number(props['y'], 'y') if 'y' in props else min(objs[i].get('y', 0) for i in selected)
+            gz = number(props.get('z', 0), 'z')
+            g = {**props, 'x': gx, 'y': gy, 'id': gid, 'type': 'group', 'children': list(selected)}
             if parent is not None:
                 g['parent'] = parent
                 objs[parent]['children'] = [k for k in objs[parent]['children'] if k not in selected] + [gid]
@@ -793,17 +858,28 @@ def operation(scene, c):
                 objs[i]['parent'] = gid
                 objs[i]['x'] = objs[i].get('x', 0) - gx
                 objs[i]['y'] = objs[i].get('y', 0) - gy
+                if gz:
+                    objs[i]['z'] = objs[i].get('z', 0) - gz
             validate_object(g)
         elif op == 'ungroup':
             for i in selected:
                 if objs[i]['type'] != 'group':
                     raise ValueError('ungroup selects groups only')
             for i in selected:
+                parent = objs[i].get('parent')
+                owner = instance_of(scene, i)
+                if owner:
+                    objs[owner]['overridden'] = True
+                # Members keep the world position they are drawn at (a laid-out group ignores stored x,y).
+                base = world_position(scene, parent) if parent is not None else (0, 0, 0)
+                placed = {k: world_position(scene, k) for k in objs[i].get('children', [])}
                 g = objs.pop(i)
-                parent = g.get('parent')
-                for k in g.get('children', []):
-                    objs[k]['x'] = objs[k].get('x', 0) + g.get('x', 0)
-                    objs[k]['y'] = objs[k].get('y', 0) + g.get('y', 0)
+                for k, (wx, wy, wz) in placed.items():
+                    objs[k]['x'], objs[k]['y'] = wx - base[0], wy - base[1]
+                    if wz - base[2]:
+                        objs[k]['z'] = wz - base[2]
+                    else:
+                        objs[k].pop('z', None)
                     if parent is None:
                         objs[k].pop('parent', None)
                     else:
@@ -824,6 +900,8 @@ def operation(scene, c):
                 objs[r]['vy'] = objs[r].get('vy', 0) + number(velocity[1])
             scene['physics']['enabled'] = True
         elif op == 'layout':
+            if c.get('mode', 'scatter') not in ('scatter', 'grid'):
+                raise ValueError('layout mode must be scatter or grid')
             rng = random.Random(c.get('seed', 1))
             spread = number(c.get('spread', 300))
             spacing = number(c.get('spacing', 180))
@@ -928,18 +1006,33 @@ def upgrade(old):
             if 'outline' in o:
                 g['outline'] = o['outline']
             out[i] = g
-    # Members become children in local coordinates.
-    for gid, g in list(out.items()):
+    # Members become children in local coordinates. Absolute positions are read before any are
+    # rewritten, so nested groups convert correctly whatever their key order. Edges stay roots,
+    # and a member claimed by two groups belongs to the first.
+    absolute = {i: (o.get('x', 0), o.get('y', 0)) for i, o in out.items()}
+    owner = {}
+    for gid, g in out.items():
         if g['type'] != 'group' or g.get('preset'):
             continue
+        g['children'] = [cid for cid in dict.fromkeys(g['children'])
+                         if cid in out and cid != gid and cid not in owner and out[cid]['type'] != 'edge']
         for cid in g['children']:
-            if cid not in out:
-                continue
-            child = out[cid]
-            child['parent'] = gid
-            child['x'] = child.get('x', 0) - g.get('x', 0)
-            child['y'] = child.get('y', 0) - g.get('y', 0)
-        g['children'] = [cid for cid in g['children'] if cid in out]
+            owner[cid] = gid
+    def reaches(start, target):
+        while start is not None:
+            if start == target:
+                return True
+            start = owner.get(start)
+        return False
+    for cid, gid in list(owner.items()):
+        if reaches(gid, cid):  # membership cycle in the old scene: break it here
+            out[gid]['children'].remove(cid)
+            del owner[cid]
+    for cid, gid in owner.items():
+        child = out[cid]
+        child['parent'] = gid
+        child['x'] = absolute[cid][0] - absolute[gid][0]
+        child['y'] = absolute[cid][1] - absolute[gid][1]
     for o in out.values():
         if o['type'] == 'edge':
             for f in ('from', 'to'):

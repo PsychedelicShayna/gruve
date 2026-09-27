@@ -24,7 +24,7 @@ JSON can also arrive on stdin. HTTP: POST `/commands`. Send one command, an arra
 ## Know what the human sees
 
 - `state.view` — `{"cx","cy","zoom","w","h"}`: the visible tab's camera in world units. Outside `cx±w/2`, `cy±h/2` is off-screen for them. Move it with `view`.
-- `objects[id].box` — `{"x","y","w","h"}` world box of every object as the browser actually laid it out, refreshed whenever the board is idle. This is where things *are*, including children of groups and text that grew.
+- `objects[id].box` — `{"x","y","w","h","ox","oy"}` world box of every object as the browser actually laid it out (`ox`,`oy` is the object's world origin), refreshed whenever the board is idle. This is where things *are*, including children of groups and text that grew.
 - `objects[id].measured` — on text: `{"w","h","contentW","contentH","overflow"}`. On a group with an explicit size: whether its children spill out. `overflow:true` is also drawn as a red dashed outline. Cards with no fixed size never overflow; they grow.
 
 You never need a screenshot to know whether things fit or overlap: compare boxes.
@@ -47,7 +47,7 @@ Everything on the board is one of seven primitives. Presets (below) are shorthan
 | `edge` | `from`, `to`, `route`, `curve`, `head`, `tail`, `label` |
 | `group` | `children`, `w`, `h`, `layout`, `padding`, `title`, `outline` |
 
-Common: `id`, `type`, `x`, `y`, `tags`, `opacity`, `color` (stroke/text), `fill`, `strokeWidth`, `dash:[on,off]`, physics `body`, `pinned`, `mass`.
+Common: `id`, `type`, `x`, `y`, `tags`, `opacity`, `color` (stroke/text), `fill`, `strokeWidth`, `dash:[on,off]`, physics `body`, `pinned`, `mass`. Colours are `#rgb`/`#rrggbb`(`aa`), a CSS colour name, `rgb()`/`hsl()`, or `none`.
 
 ### Sizing
 
@@ -84,14 +84,14 @@ An instance is a group whose children have stable ids `instance/child` (a card: 
 ### Define your own
 
 ```json
-{"op":"define","preset":{"name":"pyramid","params":{"size":100,"color":"#ffd479"},"items":[
+{"op":"define","preset":{"name":"tent","params":{"size":100,"color":"#ffd479"},"items":[
   {"id":"outline","type":"polygon","points":[[0,{"$":"-size"}],[{"$":"-size*0.9"},{"$":"size*0.55"}],[{"$":"size*0.9"},{"$":"size*0.55"}]],"color":"${color}","fill":"none","strokeWidth":3},
   {"id":"ridge","type":"polyline","points":[[0,{"$":"-size"}],[0,{"$":"size*0.2"}]],"color":"${color}","strokeWidth":3}
 ]}}
-{"op":"create","object":{"id":"p1","type":"pyramid","x":300,"y":0,"size":60}}
+{"op":"create","object":{"id":"p1","type":"tent","x":300,"y":0,"size":60}}
 ```
 
-Rules: `${name}` substitutes a parameter into a string (a whole-string `"${points}"` passes an array through); `{"$":"expr"}` computes a number from `+ - * / ( )` and parameters; `{"repeat":"items","as":"item","index":"i","items":[…]}` expands its items once per element of an array parameter (`${item}`, `${i}`; repeats nest); `"when":"title"` skips an item when that parameter is empty; an item may name an earlier group item as `"parent"` to nest. Child ids must be unique. A preset with one item is an alias for that primitive (no wrapper group). An optional `"group":{…}` sets fields of the wrapper (`w`, `layout`, `padding`). Definitions persist with the scene. The built-ins are written in exactly this language — read `presets.json` for the card and table.
+Rules: `${name}` substitutes a parameter into a string (a whole-string `"${points}"` passes an array through); `{"$":"expr"}` computes a number from `+ - * / ( )` and parameters; `{"repeat":"items","as":"item","index":"i","items":[…]}` expands its items once per element of an array parameter (`${item}`, `${i}`; repeats nest); `"when":"title"` skips an item when that parameter is empty; an item may name an earlier group item as `"parent"` to nest. Child ids must be unique. A preset with one item is an alias for that primitive (no wrapper group). An optional `"group":{…}` sets fields of the wrapper (`w`, `layout`, `padding`). Built-in names are reserved; redefining your own preset changes its instances the next time their parameters are set, and `undefine` refuses a preset that still has instances. Definitions persist with the scene. The built-ins are written in exactly this language — read `presets.json` for the card and table.
 
 ## Commands
 
@@ -104,7 +104,7 @@ Rules: `${name}` substitutes a parameter into a string (a whole-string `"${point
 | Remove | `{"op":"remove","select":{"type":"dot","fraction":0.5},"duration":150,"stagger":15}` |
 | Move | `{"op":"move","select":"a","by":[200,0],"duration":600}` / `"to":[0,0]` (one object) |
 | Connect | `{"op":"link","id":"ab","from":"a","to":"b","arrow":true,"props":{"label":"requires","route":"curve"}}` |
-| Group | `{"op":"group","id":"box","select":["a","b"],"props":{"title":"Reconcile these","color":"#ff596b"}}` |
+| Group | `{"op":"group","id":"box","select":["a","b"],"props":{"title":"Reconcile these","color":"#ff596b"}}` (members keep their world position; `x`,`y`,`z` in props place the group origin) |
 | Ungroup | `{"op":"ungroup","select":"box"}` |
 | Put into / take out of a group | `{"op":"reparent","select":"a","into":"box"}` / `"into":null` |
 | Reorder children | `{"op":"set","select":"box","props":{"children":["b","a"]}}` |
@@ -121,7 +121,7 @@ The board is 2D until the camera is unlocked: `{"op":"view","mode":"3d","yaw":35
 - Every position may carry `z` (toward the viewer; default 0) and polygon/polyline points may be `[x,y,z]`. A `polygon` with 3D points is a **face**, flat-shaded and depth-sorted; a `polyline` is an **edge**; a small `ellipse` is a **vertex**. A free group (no `layout`) is a 3D container: its children's `x`,`y`,`z` are relative to it.
 - Cards, tables, lists, text, rects and ellipses are **billboards**: they always face the viewer and scale with distance. The board will not tilt text.
 - Built-ins `cube(size,color)` and `pyramid(size,height,color)` are groups of faces; define others the same way with explicit `[x,y,z]` points.
-- Camera: `view` accepts `yaw` (degrees, orbit around the vertical axis), `pitch` (-85..85), `center:[x,y,z]`, `zoom`, `fit`, and `mode:"2d"|"3d"`. `state.view` reports `mode`, `yaw`, `pitch`, `cz`. In the UI: right-drag orbits, drag pans, wheel zooms. With yaw = pitch = 0 and every z = 0 the 3D view is identical to 2D.
+- Camera: `view` accepts `yaw` (degrees, orbit around the vertical axis), `pitch` (-85..85), `center:[x,y,z]`, `zoom`, `fit`, and `mode:"2d"|"3d"`; `yaw` or `pitch` without `mode` also unlocks 3D. `state.view` reports `mode`, `yaw`, `pitch`, `cz`. In the UI: right-drag orbits, drag pans, wheel zooms. With yaw = pitch = 0 and every z = 0 the 3D view is identical to 2D.
 - Physics pauses while in 3D; `box` values stay 2D world boxes; marks are placed on the z = 0 plane. Faces are painter-sorted by mean depth, so leave a few pixels between touching solids rather than making faces coplanar.
 
 ```json
@@ -134,7 +134,7 @@ The board is 2D until the camera is unlocked: `{"op":"view","mode":"3d","yaw":35
 
 `select` accepts `"id"`, `["a","b"]`, or a filter: `type` (primitive or preset name), `preset`, `tag`, `parent`, `roots:true`, `ids`, then `fraction`, `slice:[start,end]`, `limit`. `{}` selects everything. Moving a child of a laid-out group is an error (reorder or reparent it instead). Removing a group removes its children and their edges; ungrouping keeps them.
 
-Durations are milliseconds. Create/remove default to 180 ms fades; everything else is immediate unless given `duration`. Numbers and six-digit colours interpolate. Bulk creation makes `dot-0`, `dot-1`, …; `arrange:"grid"` with `spacing` replaces scatter.
+Durations are milliseconds. Create/remove default to 180 ms fades and `view` to a 300 ms glide; everything else is immediate unless given `duration`. Numbers and six-digit colours interpolate. Bulk creation makes `dot-0`, `dot-1`, …; `arrange:"grid"` with `spacing` replaces scatter.
 
 ## Physics
 
