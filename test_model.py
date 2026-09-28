@@ -325,6 +325,21 @@ class ModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'layout origins'):
             self.runop(op='reparent', select='r', into=None)
 
+    def test_free_child_move_invalidates_ancestor_layout_origin(self):
+        self.runop(op='create', items=[
+            {'id': 'L', 'type': 'group', 'w': 100, 'layout': {'type': 'stack', 'align': 'center'}},
+            {'id': 'F', 'type': 'group'},
+            {'id': 'a', 'type': 'rect', 'w': 10, 'h': 10},
+            {'id': 'b', 'type': 'rect', 'x': 10, 'w': 10, 'h': 10}])
+        self.runop(op='reparent', select=['a', 'b'], into='F')
+        self.runop(op='reparent', select='F', into='L')
+        self.s['objects']['L']['box'] = {'ox': 0, 'oy': 0}
+        self.s['objects']['F']['box'] = {'ox': 40, 'oy': 0}
+        self.s['layout_origins_stale'] = False
+        self.runop(op='move', select='b', by=[20, 0])
+        with self.assertRaisesRegex(ValueError, 'layout origins'):
+            self.runop(op='reparent', select='F', into=None)
+
     def test_builtin_presets_cannot_be_redefined(self):
         with self.assertRaisesRegex(ValueError, 'built-in'):
             self.runop(op='define', preset={'name': 'card', 'params': {}, 'items': [{'id': 'a', 'type': 'rect', 'w': 1, 'h': 1}]})
@@ -366,6 +381,19 @@ class ModelTests(unittest.TestCase):
         self.runop(op='create', items=[{'id': 'L', 'type': 'group', 'layout': {'type': 'stack'}}, {'id': 'G', 'type': 'group'}])
         self.runop(op='reparent', select='G', into='L')
         with self.assertRaisesRegex(ValueError, 'laid-out'): self.runop(op='ungroup', select='G')
+
+    def test_nested_ungroup_requires_separate_commands(self):
+        self.runop(op='create', items=[
+            {'id': 'G', 'type': 'group', 'x': 100},
+            {'id': 'H', 'type': 'group', 'x': 110},
+            {'id': 'leaf', 'type': 'rect', 'x': 115, 'w': 5, 'h': 5}])
+        self.runop(op='reparent', select='H', into='G')
+        self.runop(op='reparent', select='leaf', into='H')
+        with self.assertRaisesRegex(ValueError, 'one level'):
+            self.runop(op='ungroup', select=['G', 'H'])
+        self.runop(op='ungroup', select='H')
+        self.runop(op='ungroup', select='G')
+        self.assertEqual(self.s['objects']['leaf']['x'], 115)
 
     def test_reexpansion_keeps_reported_boxes(self):
         self.card(); self.s['objects']['c/body']['box'] = {'x': 1, 'y': 2, 'w': 3, 'h': 4, 'ox': 1, 'oy': 2}

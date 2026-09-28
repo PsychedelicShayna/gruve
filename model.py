@@ -589,7 +589,7 @@ def operation(scene, c):
     if op not in allowed:
         raise ValueError(f'unknown op {op!r}; ops are ' + ', '.join(sorted(allowed | {'undo', 'redo'})))
     timing(c)
-    geometry_before = layout_inputs(scene) if op in {'create', 'set', 'remove', 'reparent', 'group', 'ungroup', 'clear'} else None
+    geometry_before = layout_inputs(scene) if op in {'create', 'set', 'move', 'remove', 'reparent', 'group', 'ungroup', 'clear'} else None
     presets = presets_of(scene)
 
     def put(o):
@@ -931,6 +931,8 @@ def operation(scene, c):
                 objs[owner]['overridden'] = True
             validate_object(g)
         elif op == 'ungroup':
+            if len(top_level(scene, selected)) != len(selected):
+                raise ValueError('ungroup nested groups one level at a time')
             for i in selected:
                 if objs[i]['type'] != 'group':
                     raise ValueError('ungroup selects groups only')
