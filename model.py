@@ -517,6 +517,17 @@ def root_of(scene, i):
     return i
 
 
+LAYOUT_FIELDS = {'type', 'parent', 'children', 'layout', 'padding', 'w', 'h', 'r', 'rx',
+                 'points', 'text', 'size', 'font', 'weight', 'align'}
+
+
+def layout_inputs(scene):
+    """Geometry and ownership that can invalidate a browser-resolved layout origin."""
+    return {i: {k: copy.deepcopy(v) for k, v in o.items()
+                if k in LAYOUT_FIELDS or (k in ('x', 'y') and o.get('parent') is not None)}
+            for i, o in scene['objects'].items()}
+
+
 def world_position(scene, i):
     """World origin of i. A child of a laid-out group sits where the layout put it, which the
     browser reports as box.ox/oy; its stored x,y are ignored by the renderer. The reported offset
@@ -526,11 +537,11 @@ def world_position(scene, i):
     while i is not None:
         o = objs[i]
         parent = o.get('parent')
-        box = o.get('box') or {}
-        if parent is not None and objs[parent].get('layout') and 'ox' in box and 'oy' in box:
+        if parent is not None and objs[parent].get('layout'):
+            box = o.get('box') or {}
             pbox = objs[parent].get('box') or {}
-            if 'ox' not in pbox or 'oy' not in pbox:
-                return x + box['ox'], y + box['oy'], z + o.get('z', 0) + world_position(scene, parent)[2]
+            if scene.get('layout_origins_stale') or not all(k in box and k in pbox for k in ('ox', 'oy')):
+                raise ValueError('layout origins are unavailable or stale; wait for the browser to report the current layout')
             x += box['ox'] - pbox['ox']
             y += box['oy'] - pbox['oy']
         else:
@@ -578,6 +589,7 @@ def operation(scene, c):
     if op not in allowed:
         raise ValueError(f'unknown op {op!r}; ops are ' + ', '.join(sorted(allowed | {'undo', 'redo'})))
     timing(c)
+    geometry_before = layout_inputs(scene) if op in {'create', 'set', 'remove', 'reparent', 'group', 'ungroup', 'clear'} else None
     presets = presets_of(scene)
 
     def put(o):
@@ -796,11 +808,14 @@ def operation(scene, c):
                     owner = instance_of(scene, i)
                     if owner:
                         objs[owner]['overridden'] = True
+                original_children = o.get('children')
                 for k, v in rest.items():
                     if v is None:
                         o.pop(k, None)
                     else:
                         o[k] = copy.deepcopy(v)
+                if o.get('preset') and 'children' in rest and o.get('children') != original_children:
+                    o['overridden'] = True
                 validate_object(o)
         elif op == 'move':
             if 'to' in c and len(selected) != 1:
@@ -846,12 +861,16 @@ def operation(scene, c):
                 raise ValueError('cannot reparent into a preset instance; ungroup it or set resetOverrides on a define')
             if into is not None and instance_of(scene, into):
                 objs[instance_of(scene, into)]['overridden'] = True
+            positions = {}
             for i in selected:
                 if objs[i]['type'] == 'edge':
                     raise ValueError('edges are root objects')
                 if into is not None and into in descendants(scene, [i]):
                     raise ValueError('cannot reparent into a descendant')
-                wx, wy, wz = world_position(scene, i)
+                positions[i] = world_position(scene, i)
+            destination = world_position(scene, into) if into is not None else (0, 0, 0)
+            for i in selected:
+                wx, wy, wz = positions[i]
                 owner = instance_of(scene, i)
                 if owner:
                     objs[owner]['overridden'] = True
@@ -862,7 +881,7 @@ def operation(scene, c):
                     objs[i].pop('parent', None)
                     objs[i]['x'], objs[i]['y'] = wx, wy
                 else:
-                    px, py, pz = world_position(scene, into)
+                    px, py, pz = destination
                     objs[i]['parent'] = into
                     objs[i]['x'], objs[i]['y'] = wx - px, wy - py
                     objs[into]['children'].append(i)
@@ -918,14 +937,19 @@ def operation(scene, c):
                 parent = objs[i].get('parent')
                 if parent is not None and objs[parent].get('layout'):
                     raise ValueError(f'{i} sits in the laid-out group {parent}; reparent it out before ungrouping')
+            placements = {}
+            for i in selected:
+                parent = objs[i].get('parent')
+                base = world_position(scene, parent) if parent is not None else (0, 0, 0)
+                placed = {k: world_position(scene, k) for k in objs[i].get('children', [])}
+                placements[i] = (base, placed)
             for i in selected:
                 parent = objs[i].get('parent')
                 owner = instance_of(scene, i)
                 if owner:
                     objs[owner]['overridden'] = True
                 # Members keep the world position they are drawn at (a laid-out group ignores stored x,y).
-                base = world_position(scene, parent) if parent is not None else (0, 0, 0)
-                placed = {k: world_position(scene, k) for k in objs[i].get('children', [])}
+                base, placed = placements[i]
                 g = objs.pop(i)
                 scene.get('preset_baselines', {}).pop(i, None)
                 for k, (wx, wy, wz) in placed.items():
@@ -973,6 +997,8 @@ def operation(scene, c):
     if len(objs) > 2000:
         raise ValueError('board limit is 2000 objects')
     check_graph(scene)
+    if geometry_before is not None and geometry_before != layout_inputs(scene):
+        scene['layout_origins_stale'] = True
     return selected
 
 

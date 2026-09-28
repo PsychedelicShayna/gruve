@@ -77,6 +77,15 @@ class ModelTests(unittest.TestCase):
         self.assertEqual((obj['text'], obj['size'], obj['color']), ('updated', 30, 'red'))
         self.assertNotIn('old', obj['params'])
 
+    def test_reordered_preset_children_require_explicit_reset_before_reexpansion(self):
+        self.card()
+        reordered = list(reversed(self.s['objects']['c']['children']))
+        self.runop(op='set', select='c', props={'children': reordered})
+        with self.assertRaisesRegex(ValueError, 'resetOverrides'):
+            self.runop(op='set', select='c', props={'text': 'updated'})
+        self.runop(op='set', select='c', props={'text': 'updated'}, resetOverrides=True)
+        self.assertEqual(self.s['objects']['c/body']['text'], 'updated')
+
     def test_ungroup_clears_redefinition_baseline_before_reusing_id(self):
         def definition(width):
             return {'name': 'tag', 'params': {'width': width}, 'group': {'w': {'$': 'width'}},
@@ -290,9 +299,31 @@ class ModelTests(unittest.TestCase):
     def test_reparent_out_of_layout_uses_reported_origin(self):
         self.runop(op='create', items=[{'id': 'g', 'type': 'group', 'x': 100, 'y': 200, 'layout': {'type': 'stack'}}, {'id': 'r', 'type': 'rect', 'x': 999, 'y': 999, 'w': 5, 'h': 5}])
         self.runop(op='reparent', select='r', into='g')
+        self.s['objects']['g']['box'] = {'x': 100, 'y': 200, 'w': 5, 'h': 5, 'ox': 100, 'oy': 200}
         self.s['objects']['r']['box'] = {'x': 100, 'y': 200, 'w': 5, 'h': 5, 'ox': 100, 'oy': 200}
+        self.s['layout_origins_stale'] = False
         self.runop(op='reparent', select='r', into=None)
         self.assertEqual((self.s['objects']['r']['x'], self.s['objects']['r']['y']), (100, 200))
+
+    def test_reparent_from_unreported_layout_is_rejected(self):
+        self.runop(op='create', items=[
+            {'id': 'a', 'type': 'rect', 'x': 100, 'w': 20, 'h': 20},
+            {'id': 'b', 'type': 'rect', 'x': 200, 'w': 20, 'h': 20}])
+        self.runop(op='group', id='row', select=['a', 'b'], props={'layout': {'type': 'row'}, 'padding': 10})
+        with self.assertRaisesRegex(ValueError, 'layout origins'):
+            self.runop(op='reparent', select='b', into=None)
+
+    def test_layout_edit_invalidates_prior_origin_report(self):
+        self.runop(op='create', items=[
+            {'id': 'L', 'type': 'group', 'layout': {'type': 'row'}, 'children': []},
+            {'id': 'r', 'type': 'rect', 'w': 5, 'h': 5}])
+        self.runop(op='reparent', select='r', into='L')
+        self.s['objects']['L']['box'] = {'x': 0, 'y': 0, 'w': 5, 'h': 5, 'ox': 0, 'oy': 0}
+        self.s['objects']['r']['box'] = {'x': 10, 'y': 0, 'w': 5, 'h': 5, 'ox': 10, 'oy': 0}
+        self.s['layout_origins_stale'] = False
+        self.runop(op='set', select='L', props={'padding': 30})
+        with self.assertRaisesRegex(ValueError, 'layout origins'):
+            self.runop(op='reparent', select='r', into=None)
 
     def test_builtin_presets_cannot_be_redefined(self):
         with self.assertRaisesRegex(ValueError, 'built-in'):
@@ -326,6 +357,7 @@ class ModelTests(unittest.TestCase):
         self.runop(op='reparent', select='r', into='L')
         self.s['objects']['L']['box'] = {'x': 0, 'y': 0, 'w': 5, 'h': 5, 'ox': 0, 'oy': 0}
         self.s['objects']['r']['box'] = {'x': 8, 'y': 8, 'w': 5, 'h': 5, 'ox': 8, 'oy': 8}
+        self.s['layout_origins_stale'] = False
         self.runop(op='move', select='L', by=[100, 0])
         self.runop(op='reparent', select='r', into=None)
         self.assertEqual((self.s['objects']['r']['x'], self.s['objects']['r']['y']), (108, 8))
@@ -346,6 +378,9 @@ class ModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'resetOverrides'): self.runop(op='set', select='k', props={'size': 60})
         self.runop(op='create', items=[{'id': 't', 'type': 'table', 'rows': [['a', 'b']], 'cols': 2}, {'id': 'extra', 'type': 'rect', 'w': 1, 'h': 1}])
         cell = next(i for i in self.s['objects']['t']['children'] if self.s['objects'][i]['type'] == 'group')
+        self.s['objects']['t']['box'] = {'ox': 0, 'oy': 0}
+        self.s['objects'][cell]['box'] = {'ox': 10, 'oy': 10}
+        self.s['layout_origins_stale'] = False
         self.runop(op='reparent', select='extra', into=cell)
         with self.assertRaisesRegex(ValueError, 'resetOverrides'): self.runop(op='set', select='t', props={'cols': 1})
 
