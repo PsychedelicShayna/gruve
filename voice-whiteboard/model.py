@@ -80,13 +80,13 @@ def anchor(v, name):
     if isinstance(v, str):
         return
     if isinstance(v, list):
-        if len(v) != 2:
-            raise ValueError(f'{name} point must be [x,y]')
+        if len(v) not in (2, 3):
+            raise ValueError(f'{name} point must be [x,y] or [x,y,z]')
         for c in v:
             number(c, name)
         return
     if not isinstance(v, dict) or not isinstance(v.get('id'), str):
-        raise ValueError(f'{name} must be an id, {{"id",...}} or [x,y]')
+        raise ValueError(f'{name} must be an id, {{"id",...}}, [x,y] or [x,y,z]')
     extra = set(v) - {'id', 'side', 'offset', 'at', 'vertex'}
     if extra:
         raise ValueError(f'unknown {name} anchor fields: ' + ', '.join(sorted(extra)))

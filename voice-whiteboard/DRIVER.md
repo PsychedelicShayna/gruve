@@ -63,7 +63,7 @@ Resize a card by setting its `w`; the text re-wraps and the height follows. `{"o
 - `{"id":"a","side":"left|right|top|bottom","offset":0..1}` — a point on a side (midpoint by default);
 - `{"id":"a","at":[fx,fy]}` — a point inside the box by fractions;
 - `{"id":"poly","vertex":2}` — a polygon/polyline point;
-- `[x,y]` — a fixed world point.
+- `[x,y]` or `[x,y,z]` — a fixed world point; z is projected in 3D view.
 
 `route`: `straight` (default), `curve` (`curve` = bend in px, negative bends the other way), `elbow` (one axis-aligned bend). `head` (at `to`) and `tail` (at `from`): `none`, `arrow`, `open`, `diamond`, `dot`, `bar`. Dependency `{"head":"arrow"}`; both ways `{"head":"arrow","tail":"arrow"}`; composition `{"tail":"diamond"}`; inhibit `{"head":"bar"}`. Edges are roots, can attach to anything except other edges (children of groups included), follow their endpoints and disappear with them. `label` sits at the midpoint.
 

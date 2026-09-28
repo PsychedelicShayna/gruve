@@ -126,7 +126,7 @@ export function resolve(objects,measure){
       // Content may spill past any edge: free children can sit at negative x/y.
       const over=contentMinX<bx-1||contentMinY<by-1||contentMaxX>bx+w+1||contentMaxY>by+h+1;
       const left=Math.min(bx,contentMinX),top=Math.min(by,contentMinY);
-      if(over||measured.has(g.id))measured.set(g.id,{w,h,contentW:Math.max(0,contentMaxX-left),contentH:Math.max(0,contentMaxY-top),overflow:over});
+      measured.set(g.id,{w,h,contentW:Math.max(0,contentMaxX-left),contentH:Math.max(0,contentMaxY-top),overflow:over});
     }
     return {bx,by,bw:w,bh:h,placements};
   }

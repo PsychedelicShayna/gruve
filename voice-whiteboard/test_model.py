@@ -118,6 +118,14 @@ class ModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no vertex 3'):  # shrinking below a referenced vertex is not
             self.runop(op='set', select='p', props={'points': [[0, 0], [1, 0], [1, 1]]})
 
+    def test_fixed_3d_anchor_validates_each_coordinate(self):
+        self.runop(op='link', id='point', **{'from': [0, 0], 'to': [10, 20, 30]})
+        self.assertEqual(self.s['objects']['point']['to'], [10, 20, 30])
+        for bad in ([1], [1, 2, 3, 4], [1, 2, '3'], [1, 2, float('nan')]):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    self.runop(op='link', id='bad', **{'from': [0, 0], 'to': bad})
+
     # ---- selection and misc
     def test_type_filter_matches_preset_name(self):
         self.card(); self.dots()
