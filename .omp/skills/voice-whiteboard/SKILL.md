@@ -21,6 +21,6 @@ python3 voice-whiteboard/boardctl.py open       # once, if the user has no tab o
 
 ## Operate
 
-Read `voice-whiteboard/QUICKSTART.md`, then `voice-whiteboard/DRIVER.md` once; the DRIVER is the full command vocabulary. After that every action is `boardctl.py send '<JSON>' --wait`, `state` for the resolved boxes, and `marks --peek` for what the user pointed at (without `--peek`, `marks` consumes them for every other session too).
+Read `voice-whiteboard/QUICKSTART.md`, then `voice-whiteboard/DRIVER.md` once; the DRIVER is the full command vocabulary. After that every action is `boardctl.py send '<JSON>' --wait`, with `state` for the resolved boxes. When the user says "this", "here" or a number you didn't create, run `boardctl.py marks`: it returns the numbered spots they clicked and marks that batch handled, so their next clicks start a fresh batch.
 
-Shared board: other sessions may be driving it at the same time. Prefix your ids with a short session tag, re-read `state` before placing things in free space, and reserve `undo` and `clear` for when the user asks: both act on the whole board, including other sessions' work.
+Shared board: other sessions may be driving it at the same time. Prefix your ids with a short session tag, re-read `state` before placing things in free space, and use `marks --peek` to look at marks another session is handling without taking them. `undo` and `clear` act on the whole board, including other sessions' work, so use them only when the user asks.
