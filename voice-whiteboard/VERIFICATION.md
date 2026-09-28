@@ -1,3 +1,9 @@
+# Verification, 2026-09-28 (gruve PR #2, review round five)
+
+- 53 Python model tests pass. New regressions cover rejection before a layout has reported its position, invalidation after padding changes or moving a free child under a laid-out ancestor, nested ungroup requiring separate commands, and preset child reordering requiring explicit `resetOverrides`. The initial layout and reorder failures reproduced before their fixes.
+- 22 JavaScript engine/camera tests pass. Isolated Chromium on port 8797 with separate data reports `ALL PASS` for 29 browser sequence assertions, including impulse on a grouped body child, group-plus-child impulse once per root, atomic rejection of a layout-plus-reparent batch, and successful reparent after the fresh browser box report.
+- Layout changes retain old boxes for inspection but mark their origins stale until a complete, visible current-sequence browser report. Root-only translation still uses a prior child-parent offset plus the current parent origin.
+
 # Verification, 2026-09-28 (gruve PR #2, review round four)
 
 - 48 Python model tests pass, including preset redefinition with renamed parameters (composite and alias, with explicit instance edits and default-valued parameters), reuse of an instance ID after ungroup, and a group and child selected together moving only once in x, y and z. The initial composite schema failure and nested double-move reproduced before their fixes.
