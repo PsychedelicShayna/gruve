@@ -76,8 +76,8 @@ function sceneBox(ids){
   return {x,y,w:Math.max(...boxes.map(b=>b.x+b.w))-x,h:Math.max(...boxes.map(b=>b.y+b.h))-y};
 }
 function fitTarget(ids){
-  const box=sceneBox(ids);if(!box||!box.w||!box.h)return null;
-  const z=Math.min(1.3,(innerWidth-140)/box.w,(innerHeight-180)/box.h);
+  const box=sceneBox(ids);if(!box)return null;
+  const z=Math.min(1.3,(innerWidth-140)/Math.max(1,box.w),(innerHeight-180)/Math.max(1,box.h));
   if(is3d())return {z,tx:box.x+box.w/2,ty:box.y+box.h/2,tz:0};
   return {z,x:innerWidth/2-(box.x+box.w/2)*z,y:innerHeight/2-(box.y+box.h/2)*z};
 }

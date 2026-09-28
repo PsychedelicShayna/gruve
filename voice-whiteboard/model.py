@@ -375,8 +375,8 @@ def validate_preset(definition):
     for k in definition['params']:
         if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', k):
             raise ValueError(f'bad parameter name {k!r}')
-        if k in INSTANCE_FIELDS:
-            raise ValueError(f'parameter {k!r} collides with an instance field')
+        if k in INSTANCE_FIELDS | READ_ONLY | {'type'}:
+            raise ValueError(f'parameter {k!r} collides with a board-managed field')
     if 'group' in definition and not isinstance(definition['group'], dict):
         raise ValueError('preset group must be an object')
     objs = expand(definition, {}, 'probe', 0, 0, {})
