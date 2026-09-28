@@ -1,3 +1,9 @@
+# Verification, 2026-09-28 (gruve PR #2, review round four)
+
+- 48 Python model tests pass, including preset redefinition with renamed parameters (composite and alias, with explicit instance edits and default-valued parameters), reuse of an instance ID after ungroup, and a group and child selected together moving only once in x, y and z. The initial composite schema failure and nested double-move reproduced before their fixes.
+- 22 engine and camera tests pass. The isolated browser sequence on port 8797 with separate data passes all 25 assertions, including group-plus-child movement, an animated relative 3D move from a physics-advanced live position, and the existing absolute move check. The browser page reports `ALL PASS`; the board renders in its iframe.
+- Closing/reloading the test iframe aborted outstanding `/ack` requests in Chromium's request log; the completed suite and receipt checks passed.
+
 # Verification, 2026-09-27 (adversarial review fixes)
 
 - Reviews: one static review, one runtime probe (Grok 4.7, headless Chromium on an isolated server) and one review of the fix diff. The confirmed findings are fixed in model, server and browser commits.
