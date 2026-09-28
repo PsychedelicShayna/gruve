@@ -70,10 +70,20 @@ function viewSummary(){
   const tl=toWorld(0,0),br=toWorld(innerWidth,innerHeight);return {cx:(tl.x+br.x)/2,cy:(tl.y+br.y)/2,zoom:view.z,w:br.x-tl.x,h:br.y-tl.y,mode:'2d'};
 }
 function sceneBox(ids){
-  const boxes=(ids||[...objects.keys()]).map(i=>layout.boxes.get(i)).filter(Boolean);
-  if(!boxes.length)return null;
-  const x=Math.min(...boxes.map(b=>b.x)),y=Math.min(...boxes.map(b=>b.y));
-  return {x,y,w:Math.max(...boxes.map(b=>b.x+b.w))-x,h:Math.max(...boxes.map(b=>b.y+b.h))-y};
+  const bounds=[];
+  for(const id of ids||objects.keys()){
+    const o=objects.get(id);
+    if(o?.type==='edge'){
+      const r=route(o,objects,layout.boxes);
+      if(r)bounds.push(...r.points,...(r.control?[r.control]:[]));
+    }else{
+      const b=layout.boxes.get(id);
+      if(b)bounds.push({x:b.x,y:b.y},{x:b.x+b.w,y:b.y+b.h});
+    }
+  }
+  if(!bounds.length)return null;
+  const x=Math.min(...bounds.map(p=>p.x)),y=Math.min(...bounds.map(p=>p.y));
+  return {x,y,w:Math.max(...bounds.map(p=>p.x))-x,h:Math.max(...bounds.map(p=>p.y))-y};
 }
 function fitTarget(ids){
   const box=sceneBox(ids);if(!box)return null;
@@ -485,7 +495,7 @@ canvas.onpointerdown=e=>{
   const handleId=e.target.dataset?.handle;
   if(handleId){
     const local=layout.locals.get(handleId);
-    drag={resize:handleId,sx:e.clientX,sy:e.clientY,w:local.w,h:local.h,moved:false};
+    drag={resize:handleId,sx:e.clientX,sy:e.clientY,w:local.w,h:local.h,hadRadius:Object.hasOwn(objects.get(handleId),'r'),moved:false};
     locked.add(rootFor(handleId,objects));canvas.setPointerCapture(e.pointerId);return;
   }
   const id=pickId(e);
@@ -528,6 +538,7 @@ canvas.onpointerup=()=>{
     const o=objects.get(drag.resize);locked.delete(rootFor(drag.resize,objects));
     if(drag.moved&&o){
       const props={w:o.w};if(typeof o.h==='number')props.h=o.h;
+      if(drag.hadRadius)props.r=null;
       send({op:'set',select:drag.resize,props}).catch(()=>{});
     }
   }else if(drag?.id){

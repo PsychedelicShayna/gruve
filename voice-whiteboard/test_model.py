@@ -231,6 +231,41 @@ class ModelTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.runop(op='link', id='bad', **{'from': [0, 0], 'to': bad})
 
+    def test_layout_grid_skips_interleaved_root_edge_without_consuming_a_cell(self):
+        self.runop(op='create', items=[
+            {'id': 'a', 'type': 'rect', 'w': 10, 'h': 10},
+            {'id': 'b', 'type': 'rect', 'w': 10, 'h': 10}])
+        self.runop(op='link', id='edge', props={'x': 37, 'y': 49}, **{'from': 'a', 'to': 'b'})
+        self.runop(op='create', items=[
+            {'id': 'c', 'type': 'rect', 'w': 10, 'h': 10},
+            {'id': 'd', 'type': 'rect', 'w': 10, 'h': 10}])
+        selected = self.runop(op='layout', select={'roots': True}, mode='grid', spacing=25)
+        self.assertEqual(selected, ['a', 'b', 'edge', 'c', 'd'])
+        self.assertEqual([(self.s['objects'][i]['x'], self.s['objects'][i]['y'])
+                          for i in ('a', 'b', 'c', 'd')],
+                         [(0, 0), (25, 0), (0, 25), (25, 25)])
+        self.assertEqual((self.s['objects']['edge']['x'], self.s['objects']['edge']['y']), (37, 49))
+
+    def test_layout_scatter_ignores_explicitly_selected_edge_for_random_slots(self):
+        self.runop(op='create', items=[
+            {'id': 'a', 'type': 'rect', 'w': 10, 'h': 10},
+            {'id': 'b', 'type': 'rect', 'w': 10, 'h': 10}])
+        self.runop(op='link', id='edge', props={'x': 37, 'y': 49}, **{'from': 'a', 'to': 'b'})
+        self.runop(op='create', object={'id': 'c', 'type': 'rect', 'w': 10, 'h': 10})
+        without_edge = copy.deepcopy(self.s)
+        operation(without_edge, {'op': 'layout', 'select': ['a', 'b', 'c'],
+                                 'mode': 'scatter', 'seed': 42, 'spread': 100})
+        selected = self.runop(op='layout', select=['a', 'edge', 'b', 'c'],
+                              mode='scatter', seed=42, spread=100)
+        self.assertEqual(selected, ['a', 'edge', 'b', 'c'])
+        self.assertEqual([(self.s['objects'][i]['x'], self.s['objects'][i]['y'])
+                          for i in ('a', 'b', 'c')],
+                         [(without_edge['objects'][i]['x'], without_edge['objects'][i]['y'])
+                          for i in ('a', 'b', 'c')])
+        self.assertEqual((self.s['objects']['edge']['x'], self.s['objects']['edge']['y']), (37, 49))
+        self.assertEqual(self.runop(op='layout', select='edge', mode='grid'), ['edge'])
+        self.assertEqual((self.s['objects']['edge']['x'], self.s['objects']['edge']['y']), (37, 49))
+
     # ---- selection and misc
     def test_type_filter_matches_preset_name(self):
         self.card(); self.dots()
