@@ -1,3 +1,9 @@
+# Verification, 2026-09-28 (gruve PR #2, review round eight)
+
+- 57 Python model tests pass. Regressions verify that interleaved or explicitly selected connection edges consume no root grid/scatter slot, leave their coordinates unchanged, and do not alter seeded scatter positions.
+- 23 JavaScript engine/camera tests pass, including grid start/center/end alignment inside heterogeneous content-sized tracks with a fill cell and a negative-origin polygon.
+- Isolated Chromium on port 8797 with fresh data reports `ALL PASS` for 48 browser sequence assertions. Browser resize of a radius-defined ellipse sends `r:null` with new dimensions, which persist without snapping back; a dimension-defined ellipse sends no radius deletion. `view fit` centers a selected fixed-coordinate edge and a linked-to-fixed routed edge, and fit-all includes both.
+
 # Verification, 2026-09-28 (gruve PR #2, review round seven)
 
 - 55 Python model tests and 22 JavaScript engine/camera tests pass. A new model test rejects ownership changes while physics is active and after pause but before a full browser report.

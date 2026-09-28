@@ -999,10 +999,11 @@ def operation(scene, c):
             rng = random.Random(c.get('seed', 1))
             spread = number(c.get('spread', 300))
             spacing = number(c.get('spacing', 180))
-            cols = math.ceil(math.sqrt(max(1, len(selected))))
             if any(objs[i].get('parent') is not None for i in selected):
                 raise ValueError('layout arranges root objects only')
-            for j, i in enumerate(selected):
+            arranged = [i for i in selected if objs[i]['type'] != 'edge']
+            cols = math.ceil(math.sqrt(max(1, len(arranged))))
+            for j, i in enumerate(arranged):
                 if c.get('mode', 'scatter') == 'grid':
                     x, y = (j % cols) * spacing, (j // cols) * spacing
                 else:
