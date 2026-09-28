@@ -70,6 +70,25 @@ test('a fill cell keeps its grid index and stays inside the group box',()=>{
   assert.equal(boxes.get('a').w,30);
   for(const id of ['a','b','c']){const k=boxes.get(id);assert.ok(k.x>=g.x&&k.y>=g.y&&k.x+k.w<=g.x+g.w+1e-6&&k.y+k.h<=g.y+g.h+1e-6,id);}
 });
+test('grid aligns each cell within its own content-sized column and row',()=>{
+  for(const [align,xOffset,yOffset,lastYOffset] of [['start',0,0,0],['center',30,20,14],['end',60,40,28]]){
+    const m=scene(
+      {id:'g',type:'group',x:100,y:200,padding:5,layout:{type:'grid',cols:2,gap:7,align},children:['a','b','c','d']},
+      {id:'a',type:'polygon',parent:'g',points:[[-5,-10],[15,-10],[15,0],[-5,0]]},
+      {id:'b',type:'rect',parent:'g',w:60,h:50},
+      {id:'c',type:'rect',parent:'g',w:80,h:40},
+      {id:'d',type:'rect',parent:'g',w:'fill',h:12},
+    );
+    const {boxes,locals}=resolve(m,measure);
+    assert.deepEqual([boxes.get('g').w,boxes.get('g').h],[157,107],align);
+    assert.deepEqual([boxes.get('a').x,boxes.get('a').y],[105+xOffset,205+yOffset],align);
+    assert.deepEqual([boxes.get('a').ox,boxes.get('a').oy],[110+xOffset,215+yOffset],align);
+    assert.deepEqual([locals.get('a').bx,locals.get('a').by],[-5,-10],align);
+    assert.deepEqual([boxes.get('b').x,boxes.get('b').y],[192,205],align);
+    assert.deepEqual([boxes.get('c').x,boxes.get('c').y],[105,262],align);
+    assert.deepEqual([boxes.get('d').x,boxes.get('d').y,boxes.get('d').w],[192,262+lastYOffset,60],align);
+  }
+});
 test('row layout places children left to right with gaps',()=>{
   const m=scene({id:'r',type:'group',layout:{type:'row',gap:10},padding:5,children:['a','b']},{id:'a',type:'rect',parent:'r',w:30,h:10},{id:'b',type:'rect',parent:'r',w:20,h:40});
   const {boxes}=resolve(m,measure);

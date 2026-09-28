@@ -111,7 +111,8 @@ export function resolve(objects,measure){
       }else if(lay?.type==='row'){
         x=cursor-b.bx;y=p+(align==='center'?(innerH-kh)/2:align==='end'?innerH-kh:0)-b.by;cursor+=kw+gap;
       }else if(lay?.type==='grid'){
-        x=p+colW.slice(0,c).reduce((a,v)=>a+v,0)+gap*c-b.bx;y=p+rowsH.slice(0,r).reduce((a,v)=>a+v,0)+gap*r-b.by;
+        x=p+colW.slice(0,c).reduce((a,v)=>a+v,0)+gap*c+(align==='center'?(colW[c]-kw)/2:align==='end'?colW[c]-kw:0)-b.bx;
+        y=p+rowsH.slice(0,r).reduce((a,v)=>a+v,0)+gap*r+(align==='center'?(rowsH[r]-kh)/2:align==='end'?rowsH[r]-kh:0)-b.by;
       }else{
         x=isFill(s.k.w)?bx+p-b.bx:num(s.k.x);y=isFill(s.k.h)?by+p-b.by:num(s.k.y);
       }
