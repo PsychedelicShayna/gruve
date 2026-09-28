@@ -96,7 +96,7 @@ export function resolve(objects,measure){
       if(hugKids.length)by=Math.min(...hugKids.map(s=>num(s.k.y)+s.b.by))-p;
     }
     // Placement of content children (positions relative to the group origin).
-    const placements=[];let cursor=p,contentMaxX=-Infinity,contentMaxY=-Infinity;
+    const placements=[];let cursor=p,contentMinX=Infinity,contentMinY=Infinity,contentMaxX=-Infinity,contentMaxY=-Infinity;
     const align=lay?.align||'start';
     const cols=Math.max(1,(lay?.cols|0)||1);
     sized.forEach((s,i)=>{
@@ -116,14 +116,17 @@ export function resolve(objects,measure){
         x=isFill(s.k.w)?bx+p-b.bx:num(s.k.x);y=isFill(s.k.h)?by+p-b.by:num(s.k.y);
       }
       placements.push({id:s.k.id,x,y,w:kw,h:kh,b});
+      contentMinX=Math.min(contentMinX,x+b.bx);contentMinY=Math.min(contentMinY,y+b.by);
       contentMaxX=Math.max(contentMaxX,x+b.bx+kw);contentMaxY=Math.max(contentMaxY,y+b.by+kh);
     });
     for(const k of kids.filter(overlay)){
       placements.push({id:k.id,x:bx,y:by,w,h,b:{bx:0,by:0,bw:w,bh:h}});
     }
     if(typeof g.w==='number'||typeof g.h==='number'){
-      const over=(contentMaxX>bx+w+1)||(contentMaxY>by+h+1);
-      if(over||measured.has(g.id))measured.set(g.id,{w,h,contentW:Math.max(0,contentMaxX-bx),contentH:Math.max(0,contentMaxY-by),overflow:over});
+      // Content may spill past any edge: free children can sit at negative x/y.
+      const over=contentMinX<bx-1||contentMinY<by-1||contentMaxX>bx+w+1||contentMaxY>by+h+1;
+      const left=Math.min(bx,contentMinX),top=Math.min(by,contentMinY);
+      if(over||measured.has(g.id))measured.set(g.id,{w,h,contentW:Math.max(0,contentMaxX-left),contentH:Math.max(0,contentMaxY-top),overflow:over});
     }
     return {bx,by,bw:w,bh:h,placements};
   }
