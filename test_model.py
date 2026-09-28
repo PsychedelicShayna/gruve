@@ -86,6 +86,13 @@ class ModelTests(unittest.TestCase):
         self.runop(op='set', select='c', props={'text': 'updated'}, resetOverrides=True)
         self.assertEqual(self.s['objects']['c/body']['text'], 'updated')
 
+    def test_preset_parameters_reject_board_managed_names(self):
+        for name in ('type', 'parent', 'preset', 'params', 'measured', 'box', 'overridden', 'x'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'collides'):
+                self.runop(op='define', preset={
+                    'name': 'bad', 'params': {name: 'value'},
+                    'items': [{'id': 'shape', 'type': 'rect', 'w': 10, 'h': 10}]})
+
     def test_ungroup_clears_redefinition_baseline_before_reusing_id(self):
         def definition(width):
             return {'name': 'tag', 'params': {'width': width}, 'group': {'w': {'$': 'width'}},

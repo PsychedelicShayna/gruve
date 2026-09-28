@@ -114,6 +114,8 @@ Rules: `${name}` substitutes a parameter into a string (a whole-string `"${point
 | Camera | `{"op":"view","fit":true}` · `{"op":"view","fit":["a","b"]}` · `{"op":"view","center":[400,-120],"zoom":1.2,"duration":400}` · `{"op":"view","by":[300,0]}` |
 | Wait / undo / redo | `{"op":"wait","duration":200}` · `{"op":"undo"}` · `{"op":"redo"}` |
 
+`view fit` also centers horizontal or vertical lines whose resolved box has zero height or width. Preset parameters cannot use board-managed names (`type`, `id`, `parent`, `params`, `measured`, and similar fields).
+
 For children positioned by a `layout`, `reparent` or `ungroup` needs a current browser-resolved position. After changing layout geometry, wait for the visible board to finish and report its boxes before moving those children out; the board rejects a stale origin rather than placing them at stored coordinates. Ungroup nested groups one level at a time. Reordering a preset instance's `children` is a structural override: a later parameter edit requires `resetOverrides:true` and restores the template order.
 
 ## 3D

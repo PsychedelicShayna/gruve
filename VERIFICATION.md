@@ -1,3 +1,8 @@
+# Verification, 2026-09-28 (gruve PR #2, review round six)
+
+- 54 Python model tests pass; a new regression rejects preset parameters named after board-managed fields. It failed for seven such names before the fix.
+- 22 JavaScript engine/camera tests pass. A fresh isolated Chromium sequence on port 8797 reports `ALL PASS` for 31 browser assertions, including `view fit` centering both a horizontal zero-height polyline and a vertical zero-width polyline. The horizontal assertion failed before the fix.
+
 # Verification, 2026-09-28 (gruve PR #2, review round five)
 
 - 53 Python model tests pass. New regressions cover rejection before a layout has reported its position, invalidation after padding changes or moving a free child under a laid-out ancestor, nested ungroup requiring separate commands, and preset child reordering requiring explicit `resetOverrides`. The initial layout and reorder failures reproduced before their fixes.
