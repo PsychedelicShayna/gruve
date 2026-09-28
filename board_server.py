@@ -45,11 +45,16 @@ def snapshot():
 def trim(d,limit):
     for k in list(d)[:max(0,len(d)-limit)]:del d[k]
 
-def preset_summary():
-    return {name:dict(params=p['params'],doc=p.get('doc',''),builtin=name not in scene.get('presets',{})) for name,p in presets_of(scene).items()}
+def preset_summary(sc=None):
+    sc=scene if sc is None else sc
+    return {name:dict(params=p['params'],doc=p.get('doc',''),builtin=name not in sc.get('presets',{})) for name,p in presets_of(sc).items()}
+
+CLIENT_STALE_MS=10000
 
 def visible_view():
-    live=[c for c in clients.values() if c.get('visible') and c.get('view')]
+    # Visible tabs checkpoint every ~1.5 s; hidden or closed tabs stop, so an old ack is not a view anyone sees.
+    now=time.time()*1000
+    live=[c for c in clients.values() if c.get('visible') and c.get('view') and now-c['seen']<CLIENT_STALE_MS]
     return max(live,key=lambda c:c['seen'])['view'] if live else None
 
 def add_mark(data):
@@ -131,7 +136,10 @@ def commit(payload):
                     if i not in known:delta['upsert'].append(copy.deepcopy(candidate['objects'][i]))
                     fields=['x','y','z'] if op in ('move','layout') else ['vx','vy','body'] if op=='impulse' else list(c.get('props',{}))
                     delta['fields'][i]=list(set(delta['fields'].get(i,[]))|set(fields))
-            pending.append(dict(op=op,patch=delta,selected=selected.copy(),duration=duration,stagger=stagger,command=c))
+            event=dict(op=op,patch=delta,selected=selected.copy(),duration=duration,stagger=stagger,command=c)
+            # The browser's preset catalog (used by the editor) only comes with snapshots otherwise.
+            if candidate.get('presets')!=before.get('presets'):event['presets']=preset_summary(candidate)
+            pending.append(event)
         # Commit the complete validated sequence, then publish individual events.
         scene=candidate;undo=u;redo=r
         # A mark whose object is gone keeps its world point but no longer follows a target.
