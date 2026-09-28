@@ -107,6 +107,12 @@ try{
  await done((await send({op:'view',fit:true,duration:0})).last);
  const allBox=Object.entries(state().boxes).filter(([id])=>!['fixed-fit','linked-fit'].includes(id)).map(([,b])=>b),xMin=Math.min(...allBox.map(b=>b.x),3200,linkedBounds.x),xMax=Math.max(...allBox.map(b=>b.x+b.w),3600,linkedBounds.x+linkedBounds.width),yMin=Math.min(...allBox.map(b=>b.y),4000,linkedBounds.y),yMax=Math.max(...allBox.map(b=>b.y+b.h),4000,linkedBounds.y+linkedBounds.height);
  check(Math.abs(state().view.cx-(xMin+xMax)/2)<1&&Math.abs(state().view.cy-(yMin+yMax)/2)<1,'fit all includes fixed and linked edge route bounds');
+ const curved=await send({op:'create',object:{id:'curve-fit',type:'edge',from:[0,0],to:[100,0],route:'curve',curve:80}});await done(curved.last);
+ let reported;for(let i=0;i<100;i++){reported=(await(await fetch('/state')).json()).objects;if(reported['fixed-fit'].box&&reported['linked-fit'].box&&reported['curve-fit'].box)break;await sleep(20);}
+ const fixedBox=reported['fixed-fit'].box,linkedBox=reported['linked-fit'].box,curveBox=reported['curve-fit'].box;
+ check(fixedBox.x===3200&&fixedBox.y===4000&&fixedBox.w===400&&fixedBox.h===0,'full browser report persists fixed-coordinate edge bounds');
+ check(Math.abs(linkedBox.x-linkedBounds.x)<.1&&Math.abs(linkedBox.y-linkedBounds.y)<.1&&Math.abs(linkedBox.w-linkedBounds.width)<.1&&Math.abs(linkedBox.h-linkedBounds.height)<.1,'full browser report persists linked elbow route bounds');
+ check(curveBox.x===0&&curveBox.y===0&&curveBox.w===100&&curveBox.h===40,'curved edge bounds follow quadratic extrema, not control-point hull');
  await sleep(50);const final=await (await fetch('/status')).json();check(Object.values(final.receipts).some(r=>Object.values(r).some(v=>v&&typeof v==='object'&&typeof v.firstFrameMs==='number'&&typeof v.doneMs==='number')),'first-frame and completion metrics recorded');
  document.getElementById('results').textContent=results.join('\n')+'\nALL PASS';
  await fetch('/test-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passed:true,results,receipts:final.receipts})});

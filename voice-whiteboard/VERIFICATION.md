@@ -1,3 +1,9 @@
+# Verification, 2026-09-28 (final queued Codex review; no further bot requests)
+
+- 58 Python model tests pass, including acceptance of 3/4/6/8-digit hexadecimal paints and rejection of other lengths without changing the prior field. 23 JavaScript engine/camera tests pass.
+- Isolated Chromium on port 8797 with separate data reports `ALL PASS` for 51 browser sequence assertions. Full current-sequence browser reports persist fixed-point, linked elbow, and curved edge world boxes. The curve's quadratic extrema yield a 40-pixel height for a control point 80 pixels above the endpoints, not an 80-pixel control-hull height.
+- Skill PR #3's already-requested review reports no major issues. No additional automated review requests are planned.
+
 # Verification, 2026-09-28 (gruve PR #2, review round eight)
 
 - 57 Python model tests pass. Regressions verify that interleaved or explicitly selected connection edges consume no root grid/scatter slot, leave their coordinates unchanged, and do not alter seeded scatter positions.

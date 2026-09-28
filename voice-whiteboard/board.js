@@ -69,17 +69,25 @@ function viewSummary(){
   if(is3d())return {cx:view.tx,cy:view.ty,cz:view.tz,zoom:view.z,w:innerWidth/view.z,h:innerHeight/view.z,mode:'3d',yaw:view.yaw,pitch:view.pitch};
   const tl=toWorld(0,0),br=toWorld(innerWidth,innerHeight);return {cx:(tl.x+br.x)/2,cy:(tl.y+br.y)/2,zoom:view.z,w:br.x-tl.x,h:br.y-tl.y,mode:'2d'};
 }
+function routedBox(o){
+  const r=route(o,objects,layout.boxes);if(!r)return null;
+  const points=[...r.points];
+  if(r.control){
+    const [a,b]=r.points,c=r.control;
+    for(const axis of ['x','y']){
+      const t=(a[axis]-c[axis])/(a[axis]-2*c[axis]+b[axis]);
+      if(t>0&&t<1)points.push({x:(1-t)**2*a.x+2*(1-t)*t*c.x+t*t*b.x,y:(1-t)**2*a.y+2*(1-t)*t*c.y+t*t*b.y});
+    }
+  }
+  const x=Math.min(...points.map(p=>p.x)),y=Math.min(...points.map(p=>p.y));
+  return {x,y,w:Math.max(...points.map(p=>p.x))-x,h:Math.max(...points.map(p=>p.y))-y};
+}
 function sceneBox(ids){
   const bounds=[];
   for(const id of ids||objects.keys()){
     const o=objects.get(id);
-    if(o?.type==='edge'){
-      const r=route(o,objects,layout.boxes);
-      if(r)bounds.push(...r.points,...(r.control?[r.control]:[]));
-    }else{
-      const b=layout.boxes.get(id);
-      if(b)bounds.push({x:b.x,y:b.y},{x:b.x+b.w,y:b.y+b.h});
-    }
+    const b=o?.type==='edge'?routedBox(o):layout.boxes.get(id);
+    if(b)bounds.push({x:b.x,y:b.y},{x:b.x+b.w,y:b.y+b.h});
   }
   if(!bounds.length)return null;
   const x=Math.min(...bounds.map(p=>p.x)),y=Math.min(...bounds.map(p=>p.y));
@@ -130,7 +138,15 @@ function ack(stage,n,full=false){
   const body={client,stage,seq:n,time:Date.now(),visible:!document.hidden,view:viewSummary()};
   if(full){
     body.positions=Object.fromEntries([...objects.values()].filter(isRoot).map(o=>[o.id,{x:o.x||0,y:o.y||0,z:o.z||0,vx:o.vx||0,vy:o.vy||0}]));
-    body.boxes=Object.fromEntries([...layout.boxes].map(([id,b])=>[id,{x:Math.round(b.x*10)/10,y:Math.round(b.y*10)/10,w:Math.round(b.w*10)/10,h:Math.round(b.h*10)/10,ox:Math.round(b.ox*10)/10,oy:Math.round(b.oy*10)/10}]));
+    const boxes=new Map(layout.boxes),round=v=>Math.round(v*10)/10;
+    for(const o of objects.values())if(o.type==='edge'){
+      const b=routedBox(o);if(b)boxes.set(o.id,b);
+    }
+    body.boxes=Object.fromEntries([...boxes].map(([id,b])=>{
+      const reported={x:round(b.x),y:round(b.y),w:round(b.w),h:round(b.h)};
+      if(b.ox!==undefined){reported.ox=round(b.ox);reported.oy=round(b.oy);}
+      return [id,reported];
+    }));
     body.measured=Object.fromEntries(layout.measured);
   }
   fetch('/ack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).catch(()=>{});
