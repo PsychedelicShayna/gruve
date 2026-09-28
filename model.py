@@ -617,6 +617,10 @@ def operation(scene, c):
             raise ValueError(f'{i} has directly edited children; pass "resetOverrides":true to re-expand it from its parameters')
         merged = {**inst.get('params', {}), **params}
         fields = {k: v for k, v in inst.items() if k in INSTANCE_FIELDS and k not in ('id', 'x', 'y')}
+        baseline = expand(presets[inst['preset']], inst.get('params', {}), i, inst.get('x', 0), inst.get('y', 0), fields)[0]
+        ignored = {'id', 'x', 'y', 'children', 'parent', 'preset', 'params', 'overridden', 'box', 'measured'}
+        edits = {k: v for k, v in inst.items() if k not in ignored and (k not in baseline or v != baseline[k])}
+        deleted = {k for k in baseline if k not in ignored and k not in inst}
         fresh_objs = expand(presets[inst['preset']], merged, i, inst.get('x', 0), inst.get('y', 0), fields)
         new_ids = {o['id'] for o in fresh_objs}
         old_children = descendants(scene, [i]) - {i}
@@ -637,6 +641,10 @@ def operation(scene, c):
                 inst.update(o, **reported)
                 if keep_parent is not None:
                     inst['parent'] = keep_parent
+                inst.update(edits)
+                for k in deleted:
+                    inst.pop(k, None)
+                validate_object(inst)
             else:
                 objs[o['id']] = o
         # Edges that pointed at vanished children go with them.
@@ -909,11 +917,11 @@ def operation(scene, c):
             velocity = c.get('velocity')
             if not isinstance(velocity, list) or len(velocity) != 2:
                 raise ValueError('impulse needs velocity:[vx,vy]')
-            for i in selected:
-                r = root_of(scene, i)
+            vx, vy = number(velocity[0]), number(velocity[1])
+            for r in {root_of(scene, i) for i in selected}:
                 objs[r]['body'] = True
-                objs[r]['vx'] = objs[r].get('vx', 0) + number(velocity[0])
-                objs[r]['vy'] = objs[r].get('vy', 0) + number(velocity[1])
+                objs[r]['vx'] = objs[r].get('vx', 0) + vx
+                objs[r]['vy'] = objs[r].get('vy', 0) + vy
             scene['physics']['enabled'] = True
         elif op == 'layout':
             if c.get('mode', 'scatter') not in ('scatter', 'grid'):

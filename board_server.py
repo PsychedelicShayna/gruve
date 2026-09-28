@@ -233,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
                     if stage in ('firstFrame','done') and n in receipts:
                         timestamp=float(data['time'])
                         if not math.isfinite(timestamp):raise ValueError('invalid timestamp')
-                    updates=[]
+                    updates=[];removals=[]
                     if stage in ('done','checkpoint') and n==seq and data.get('visible'):
                         for i,p in (data.get('positions') or {}).items():
                             o=scene['objects'].get(i)
@@ -246,6 +246,9 @@ class Handler(BaseHTTPRequestHandler):
                         for i,b in (data.get('boxes') or {}).items():
                             if i in scene['objects'] and isinstance(b,dict):
                                 updates.append((scene['objects'][i],'box',{k:number(b[k],k) for k in ('x','y','w','h','ox','oy') if k in b}))
+                        for key, report in (('measured',data.get('measured')),('box',data.get('boxes'))):
+                            if isinstance(report,dict):
+                                removals.extend((o,key) for i,o in scene['objects'].items() if key in o and i not in report)
                     previous=clients.pop(client,{})
                     clients[client]={'seen':time.time()*1000,'seq':n,'stage':stage,'visible':data.get('visible',False),'view':view if view else previous.get('view')}
                     trim(clients,20)
@@ -254,6 +257,8 @@ class Handler(BaseHTTPRequestHandler):
                     changed=False
                     for o,k,v in updates:
                         if o.get(k,0 if k not in ('box','measured') else None)!=v:o[k]=v;changed=True
+                    for o,k in removals:
+                        del o[k];changed=True
                     if changed:persist()
                 return self.json({'ok':True})
             return self.json({'error':'not found'},404)
