@@ -43,6 +43,10 @@ try{
  const relativeMove=await send({op:'move',select:'relative-runner',by:[80,0,7],duration:220});await done(relativeMove.last);
  const movedRelative=state().objects['relative-runner'];check(movedRelative.x>=beforeRelative.x+79&&movedRelative.z===beforeRelative.z+7,'relative move continues from live physics position through animation finalization, including z');
  await done((await send({op:'physics',props:{enabled:false}})).last);
+ const line=await send({op:'create',object:{id:'fit-horizontal',type:'polyline',x:2000,y:1200,points:[[0,0],[200,0]]}});await done(line.last);
+ await done((await send({op:'view',fit:['fit-horizontal'],duration:0})).last);check(Math.abs(state().view.cx-2100)<1&&Math.abs(state().view.cy-1200)<1,'fit centers a horizontal zero-height polyline');
+ const vertical=await send({op:'create',object:{id:'fit-vertical',type:'polyline',x:-1800,y:-900,points:[[0,0],[0,180]]}});await done(vertical.last);
+ await done((await send({op:'view',fit:['fit-vertical'],duration:0})).last);check(Math.abs(state().view.cx+1800)<1&&Math.abs(state().view.cy+810)<1,'fit centers a vertical zero-width polyline');
  const undoBefore=state().objects.new.color;await done((await send({op:'set',select:'new',props:{color:'#111111'}})).last);await done((await send({op:'undo'})).last);check(state().objects.new.color===undoBefore,'undo restores scene');await done((await send({op:'redo'})).last);check(state().objects.new.color==='#111111','redo reapplies scene');
  const countBefore=Object.keys(state().objects).length;frame.src='/';await sleep(200);await ready();check(Object.keys(state().objects).length===countBefore,'reconnect restores snapshot without replaying creation');
  await sleep(50);const final=await (await fetch('/status')).json();check(Object.values(final.receipts).some(r=>Object.values(r).some(v=>v&&typeof v==='object'&&typeof v.firstFrameMs==='number'&&typeof v.doneMs==='number')),'first-frame and completion metrics recorded');
