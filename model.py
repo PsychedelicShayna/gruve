@@ -498,6 +498,18 @@ def descendants(scene, ids):
     return result
 
 
+def top_level(scene, ids):
+    """Drop selected descendants whose ancestor already moves in the same command."""
+    selected = set(ids)
+    result = []
+    for i in ids:
+        parent = scene['objects'][i].get('parent')
+        while parent is not None and parent not in selected:
+            parent = scene['objects'][parent].get('parent')
+        if parent is None:
+            result.append(i)
+    return result
+
 def root_of(scene, i):
     objs = scene['objects']
     while objs[i].get('parent') is not None:
@@ -571,6 +583,7 @@ def operation(scene, c):
     def put(o):
         if o['id'] in objs:
             raise ValueError('duplicate id ' + o['id'])
+        scene.get('preset_baselines', {}).pop(o['id'], None)
         objs[o['id']] = o
 
     def add(spec):
@@ -606,6 +619,7 @@ def operation(scene, c):
         removed.update(i for i, o in objs.items() if o['type'] == 'edge' and (anchor_id(o['from']) in removed or anchor_id(o['to']) in removed))
         for i in removed:
             objs.pop(i, None)
+            scene.get('preset_baselines', {}).pop(i, None)
         for o in objs.values():
             if 'children' in o:
                 o['children'] = [i for i in o['children'] if i not in removed]
@@ -615,13 +629,17 @@ def operation(scene, c):
         inst = objs[i]
         if inst.get('overridden') and not reset:
             raise ValueError(f'{i} has directly edited children; pass "resetOverrides":true to re-expand it from its parameters')
-        merged = {**inst.get('params', {}), **params}
+        definition = presets[inst['preset']]
+        previous = {k: v for k, v in inst.get('params', {}).items() if k in definition['params']}
+        merged = {**previous, **params}
         fields = {k: v for k, v in inst.items() if k in INSTANCE_FIELDS and k not in ('id', 'x', 'y')}
-        baseline = expand(presets[inst['preset']], inst.get('params', {}), i, inst.get('x', 0), inst.get('y', 0), fields)[0]
+        baseline = scene.get('preset_baselines', {}).get(i)
+        if baseline is None:
+            baseline = expand(definition, previous, i, inst.get('x', 0), inst.get('y', 0), fields)[0]
         ignored = {'id', 'x', 'y', 'children', 'parent', 'preset', 'params', 'overridden', 'box', 'measured'}
         edits = {k: v for k, v in inst.items() if k not in ignored and (k not in baseline or v != baseline[k])}
         deleted = {k for k in baseline if k not in ignored and k not in inst}
-        fresh_objs = expand(presets[inst['preset']], merged, i, inst.get('x', 0), inst.get('y', 0), fields)
+        fresh_objs = expand(definition, merged, i, inst.get('x', 0), inst.get('y', 0), fields)
         new_ids = {o['id'] for o in fresh_objs}
         old_children = descendants(scene, [i]) - {i}
         for o in fresh_objs:
@@ -652,6 +670,7 @@ def operation(scene, c):
         for eid, e in list(objs.items()):
             if e['type'] == 'edge' and (anchor_id(e['from']) in gone or anchor_id(e['to']) in gone):
                 objs.pop(eid)
+        scene.get('preset_baselines', {}).pop(i, None)
 
     if op == 'create':
         if 'items' in c:
@@ -692,6 +711,13 @@ def operation(scene, c):
         if d['name'] in PRIMITIVES or d['name'] in BUILTIN_PRESETS:
             raise ValueError(f'preset name {d["name"]} is a built-in; pick another name')
         validate_preset(d)
+        old = scene.get('presets', {}).get(d['name'])
+        if old is not None and old != d:
+            baselines = scene.setdefault('preset_baselines', {})
+            for i, inst in objs.items():
+                if inst.get('preset') == d['name'] and i not in baselines:
+                    fields = {k: v for k, v in inst.items() if k in INSTANCE_FIELDS and k not in ('id', 'x', 'y')}
+                    baselines[i] = expand(old, inst.get('params', {}), i, inst.get('x', 0), inst.get('y', 0), fields)[0]
         scene.setdefault('presets', {})[d['name']] = copy.deepcopy(d)
     elif op == 'undefine':
         name = c.get('name')
@@ -747,6 +773,7 @@ def operation(scene, c):
     elif op == 'clear':
         selected = list(objs)
         objs.clear()
+        scene.get('preset_baselines', {}).clear()
     elif op != 'wait':
         selected = select(scene, c.get('select'))
         if op == 'set':
@@ -778,7 +805,9 @@ def operation(scene, c):
         elif op == 'move':
             if 'to' in c and len(selected) != 1:
                 raise ValueError('move to requires exactly one selected object; use by for many')
-            for i in selected:
+            selected_set = set(selected)
+            moving = top_level(scene, selected)
+            for i in moving:
                 p = objs[i].get('parent')
                 if p is not None and objs[p].get('layout'):
                     raise ValueError(f'{i} is positioned by the layout of {p}; reorder its parent\'s children with set, or reparent it')
@@ -794,11 +823,11 @@ def operation(scene, c):
                 raise ValueError('move needs by:[dx,dy] or to:[x,y]; a third value moves in z')
             dx, dy = number(delta[0]), number(delta[1])
             dz = number(delta[2]) if len(delta) == 3 else 0
-            for i in selected:
+            for i in moving:
                 owner = instance_of(scene, i)
-                if owner and owner not in selected:
+                if owner and owner not in selected_set:
                     objs[owner]['overridden'] = True
-            for i in selected:
+            for i in moving:
                 objs[i]['x'] = objs[i].get('x', 0) + dx
                 objs[i]['y'] = objs[i].get('y', 0) + dy
                 if dz:
@@ -898,6 +927,7 @@ def operation(scene, c):
                 base = world_position(scene, parent) if parent is not None else (0, 0, 0)
                 placed = {k: world_position(scene, k) for k in objs[i].get('children', [])}
                 g = objs.pop(i)
+                scene.get('preset_baselines', {}).pop(i, None)
                 for k, (wx, wy, wz) in placed.items():
                     objs[k]['x'], objs[k]['y'] = wx - base[0], wy - base[1]
                     if wz - base[2]:
