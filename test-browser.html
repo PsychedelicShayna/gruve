@@ -79,6 +79,34 @@ try{
  await done((await send({op:'view',fit:['fit-vertical'],duration:0})).last);check(Math.abs(state().view.cx+1800)<1&&Math.abs(state().view.cy+810)<1,'fit centers a vertical zero-width polyline');
  const undoBefore=state().objects.new.color;await done((await send({op:'set',select:'new',props:{color:'#111111'}})).last);await done((await send({op:'undo'})).last);check(state().objects.new.color===undoBefore,'undo restores scene');await done((await send({op:'redo'})).last);check(state().objects.new.color==='#111111','redo reapplies scene');
  const countBefore=Object.keys(state().objects).length;frame.src='/';await sleep(200);await ready();check(Object.keys(state().objects).length===countBefore,'reconnect restores snapshot without replaying creation');
+ const isolated=await send({op:'clear',duration:0});await done(isolated.last);
+ const ellipses=await send({op:'create',items:[{id:'radius-resize',type:'ellipse',x:100,y:200,r:30},{id:'sized-resize',type:'ellipse',x:300,y:200,w:80,h:40}]});await done(ellipses.last);
+ const board=frame.contentDocument.getElementById('canvas'),originalCapture=board.setPointerCapture,originalFetch=frame.contentWindow.fetch,resizeCommands=[];
+ frame.contentWindow.fetch=function(url,options){if(url==='/commands')resizeCommands.push(JSON.parse(options.body));return originalFetch.call(this,url,options);};
+ board.setPointerCapture=()=>{};
+ try{
+   for(const id of ['radius-resize','sized-resize']){
+     const start=state().boxes[id],x=400,y=300;
+     board.onpointerdown({button:0,target:{dataset:{handle:id}},clientX:x,clientY:y,pointerId:1});
+     board.onpointermove({clientX:x+40,clientY:y+25});
+     board.onpointerup({});
+     for(let i=0;i<100;i++){if(resizeCommands.length>=(['radius-resize','sized-resize'].indexOf(id)+1))break;await sleep(20);}
+     const resize=resizeCommands.at(-1);
+     check(resize?.op==='set'&&resize.select===id&&resize.props.w>start.w&&resize.props.h>start.h&&(id==='radius-resize'?resize.props.r===null:!Object.hasOwn(resize.props,'r')),id==='radius-resize'?'radius resize sends deletion with new dimensions':'sized ellipse resize does not send radius deletion');
+     for(let i=0;i<100;i++){const persisted=(await(await fetch('/state')).json()).objects[id];if(persisted?.w===resize.props.w&&persisted?.h===resize.props.h&&(!Object.hasOwn(persisted,'r')))break;await sleep(20);}
+     const persisted=(await(await fetch('/state')).json()).objects[id];
+     check(persisted.w===resize.props.w&&persisted.h===resize.props.h&&!Object.hasOwn(persisted,'r'),id==='radius-resize'?'resized radius ellipse stays nonsquare in persisted scene':'sized ellipse dimensions persist');
+   }
+ }finally{board.setPointerCapture=originalCapture;frame.contentWindow.fetch=originalFetch;}
+ const edges=await send({op:'create',items:[{id:'fixed-fit',type:'edge',from:[3200,4000],to:[3600,4000]},{id:'linked-fit-node',type:'rect',x:4200,y:1700,w:100,h:100},{id:'linked-fit',type:'edge',from:'linked-fit-node',to:[5800,1900],route:'elbow'}]});await done(edges.last);
+ await done((await send({op:'view',fit:['fixed-fit'],duration:0})).last);
+ check(Math.abs(state().view.cx-3400)<1&&Math.abs(state().view.cy-4000)<1&&state().view.zoom>0,'fit selected fixed-point edge includes both endpoints and zero-height axis');
+ const linkedPath=frame.contentDocument.querySelector('[data-id="linked-fit"] path'),linkedBounds=linkedPath.getBBox();
+ await done((await send({op:'view',fit:['linked-fit'],duration:0})).last);
+ check(Math.abs(state().view.cx-(linkedBounds.x+linkedBounds.width/2))<1&&Math.abs(state().view.cy-(linkedBounds.y+linkedBounds.height/2))<1,'fit selected linked-to-fixed edge includes routed world endpoints');
+ await done((await send({op:'view',fit:true,duration:0})).last);
+ const allBox=Object.entries(state().boxes).filter(([id])=>!['fixed-fit','linked-fit'].includes(id)).map(([,b])=>b),xMin=Math.min(...allBox.map(b=>b.x),3200,linkedBounds.x),xMax=Math.max(...allBox.map(b=>b.x+b.w),3600,linkedBounds.x+linkedBounds.width),yMin=Math.min(...allBox.map(b=>b.y),4000,linkedBounds.y),yMax=Math.max(...allBox.map(b=>b.y+b.h),4000,linkedBounds.y+linkedBounds.height);
+ check(Math.abs(state().view.cx-(xMin+xMax)/2)<1&&Math.abs(state().view.cy-(yMin+yMax)/2)<1,'fit all includes fixed and linked edge route bounds');
  await sleep(50);const final=await (await fetch('/status')).json();check(Object.values(final.receipts).some(r=>Object.values(r).some(v=>v&&typeof v==='object'&&typeof v.firstFrameMs==='number'&&typeof v.doneMs==='number')),'first-frame and completion metrics recorded');
  document.getElementById('results').textContent=results.join('\n')+'\nALL PASS';
  await fetch('/test-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passed:true,results,receipts:final.receipts})});
