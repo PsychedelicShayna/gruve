@@ -362,7 +362,12 @@ async function execute(e,generation){
     const current=objects.get(o.id);if(!current)return o;
     if(e.op==='undo'||e.op==='redo')return o;
     const next={...current};for(const field of e.patch.fields[o.id]||[])next[field]=o[field];
-    if(e.op==='move'){next.x=o.x;next.y=o.y;if(o.z!==undefined)next.z=o.z;}
+    if(e.op==='move'){
+      if(c.by){
+        next.x=(current.x||0)+c.by[0];next.y=(current.y||0)+c.by[1];
+        if(c.by.length===3&&c.by[2])next.z=(current.z||0)+c.by[2];else if(current.z===undefined)delete next.z;
+      }else{next.x=o.x;next.y=o.y;if(o.z!==undefined)next.z=o.z;}
+    }
     if(e.op==='impulse'&&c.velocity){next.vx=(current.vx||0)+c.velocity[0];next.vy=(current.vy||0)+c.velocity[1];}
     return next;
   });

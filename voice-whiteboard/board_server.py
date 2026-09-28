@@ -9,7 +9,7 @@ import threading
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from model import fresh, operation, patch, number, timing, upgrade, presets_of, VERSION
+from model import fresh, operation, patch, number, timing, upgrade, presets_of, top_level, VERSION
 
 ROOT=Path(__file__).parent
 parser=argparse.ArgumentParser()
@@ -130,7 +130,7 @@ def commit(payload):
             # Semantic commands still apply when browser physics has changed positions
             # beyond the last server checkpoint, even if the server diff is empty.
             if op in ('move','layout','set','impulse'):
-                affected=selected
+                affected=top_level(candidate, selected) if op=='move' else selected
                 known={o['id'] for o in delta['upsert']}
                 for i in affected:
                     if i not in known:delta['upsert'].append(copy.deepcopy(candidate['objects'][i]))

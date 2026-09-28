@@ -44,6 +44,53 @@ class ModelTests(unittest.TestCase):
         self.runop(op='set', select='c', props={'text': 'x'})
         self.assertNotIn('layout', self.s['objects']['c'])
 
+    def test_redefined_preset_drops_obsolete_parameters_on_reexpand(self):
+        def definition(params, parameter):
+            return {'name': 'badge', 'params': params, 'items': [
+                {'id': 'label', 'type': 'text', 'text': '${' + parameter + '}'}, {'id': 'back', 'type': 'rect', 'w': 20, 'h': 20}]}
+        self.runop(op='define', preset=definition({'old': 'first'}, 'old'))
+        self.runop(op='create', object={'id': 'badge-1', 'type': 'badge', 'old': 'custom'})
+        self.runop(op='define', preset=definition({'new': 'second'}, 'new'))
+        self.runop(op='set', select='badge-1', props={'new': 'updated'})
+        self.assertEqual(self.s['objects']['badge-1']['params'], {'new': 'updated'})
+        self.assertEqual(self.s['objects']['badge-1/label']['text'], 'updated')
+
+    def test_redefined_alias_updates_its_primitive_fields(self):
+        self.runop(op='define', preset={'name': 'tag', 'params': {'old': 'before'},
+                                        'items': [{'id': 'text', 'type': 'text', 'text': '${old}'}]})
+        self.runop(op='create', object={'id': 'tag-1', 'type': 'tag', 'old': 'mine'})
+        self.runop(op='define', preset={'name': 'tag', 'params': {'new': 'after'},
+                                        'items': [{'id': 'text', 'type': 'text', 'text': '${new}'}]})
+        self.runop(op='set', select='tag-1', props={'new': 'changed'})
+        self.assertEqual(self.s['objects']['tag-1']['params'], {'new': 'changed'})
+        self.assertEqual(self.s['objects']['tag-1']['text'], 'changed')
+
+    def test_redefined_alias_with_default_parameters_preserves_explicit_edits(self):
+        self.runop(op='define', preset={'name': 'tag', 'params': {'old': 'before'},
+                                        'items': [{'id': 'text', 'type': 'text', 'text': '${old}', 'size': 12, 'color': 'blue'}]})
+        self.runop(op='create', object={'id': 'tag-1', 'type': 'tag'})
+        self.runop(op='set', select='tag-1', props={'size': 30, 'color': 'red'})
+        self.runop(op='define', preset={'name': 'tag', 'params': {'new': 'after'},
+                                        'items': [{'id': 'text', 'type': 'text', 'text': '${new}', 'size': 12, 'color': 'blue'}]})
+        self.runop(op='set', select='tag-1', props={'new': 'updated'})
+        obj = self.s['objects']['tag-1']
+        self.assertEqual((obj['text'], obj['size'], obj['color']), ('updated', 30, 'red'))
+        self.assertNotIn('old', obj['params'])
+
+    def test_ungroup_clears_redefinition_baseline_before_reusing_id(self):
+        def definition(width):
+            return {'name': 'tag', 'params': {'width': width}, 'group': {'w': {'$': 'width'}},
+                    'items': [{'id': 'body', 'type': 'rect', 'w': 5, 'h': 5}]}
+        self.runop(op='define', preset=definition(10))
+        self.runop(op='create', object={'id': 'g', 'type': 'tag'})
+        self.runop(op='define', preset=definition(20))
+        self.runop(op='ungroup', select='g')
+        self.runop(op='remove', select='g/body')
+        self.runop(op='create', object={'id': 'g', 'type': 'tag'})
+        self.runop(op='set', select='g', props={'width': 30})
+        self.assertEqual(self.s['objects']['g']['w'], 30)
+        self.assertNotIn('g', self.s.get('preset_baselines', {}))
+
     def test_direct_child_edit_protects_against_silent_loss(self):
         self.card()
         self.runop(op='set', select='c/body', props={'color': '#ff0000'})
@@ -101,6 +148,17 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(self.s['objects']['d-1']['x'], 80)  # children do not move in their own frame
         self.runop(op='ungroup', select='g')
         self.assertEqual((self.s['objects']['d-1']['x'], self.s['objects']['d-1']['y']), (105, 55))
+
+    def test_move_group_and_descendant_translates_once(self):
+        self.runop(op='create', items=[
+            {'id': 'g', 'type': 'group', 'x': 100, 'y': 20, 'z': 10},
+            {'id': 'child', 'type': 'rect', 'x': 125, 'y': 25, 'z': 13, 'w': 20, 'h': 20}])
+        self.runop(op='reparent', select='child', into='g')
+        self.runop(op='move', select={}, by=[7, 9, 4])
+        objects = self.s['objects']
+        self.assertEqual((objects['g']['x'], objects['g']['y'], objects['g']['z']), (107, 29, 14))
+        self.assertEqual((objects['child']['x'], objects['child']['y'], objects['child']['z']), (25, 5, 3))
+
 
     def test_reparent_keeps_world_position(self):
         self.dots(); self.runop(op='create', object={'id': 'g', 'type': 'group', 'x': 100, 'y': 100})
