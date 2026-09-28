@@ -421,6 +421,16 @@ class ModelTests(unittest.TestCase):
         self.runop(op='create', object={'id': 'r', 'type': 'rect', 'w': 1, 'h': 1, 'fill': 'none', 'color': 'rgba(10, 20, 30, .5)'})
         with self.assertRaisesRegex(ValueError, 'colour'): self.runop(op='set', select='r', props={'fill': 'url(https://example.invalid/x.svg)'})
 
+    def test_hex_paints_require_css_lengths(self):
+        self.runop(op='create', object={'id': 'paint', 'type': 'rect', 'w': 10, 'h': 10, 'color': '#123', 'fill': '#1234'})
+        for valid in ('#112233', '#11223344'):
+            self.runop(op='set', select='paint', props={'fill': valid})
+            self.assertEqual(self.s['objects']['paint']['fill'], valid)
+        for invalid in ('#12', '#12345', '#1234567', '#123456789'):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'colour'):
+                self.runop(op='set', select='paint', props={'fill': invalid})
+            self.assertEqual(self.s['objects']['paint']['fill'], '#11223344')
+
     def test_malformed_commands_raise_value_errors(self):
         for c in ({'op': 'create', 'object': 'x', 'count': 2}, {'op': 'physics', 'props': ['enabled']}, {'op': 'layout', 'select': {}, 'mode': 'spiral'},
                   {'op': 'create', 'object': {'id': 'a', 'type': 'rect', 'w': 1, 'h': 1}, 'duration': float('nan')}):
