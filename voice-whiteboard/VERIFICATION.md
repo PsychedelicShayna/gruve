@@ -1,3 +1,8 @@
+# Verification, 2026-09-28 (gruve PR #2, review round seven)
+
+- 55 Python model tests and 22 JavaScript engine/camera tests pass. A new model test rejects ownership changes while physics is active and after pause but before a full browser report.
+- Isolated Chromium on port 8797 with separate data reports `ALL PASS` for 41 browser sequence assertions. A moving grouped object was marked through a child click after its live position diverged from the server's; the rendered mark stayed at that local point as physics advanced. The same run rejected reparent during physics and an atomic pause-plus-reparent batch, then accepted reparent after the paused full report without a position jump. Before the fix, a queued physics reparent moved the child from x≈102 to x≈34.
+
 # Verification, 2026-09-28 (gruve PR #2, review round six)
 
 - 54 Python model tests pass; a new regression rejects preset parameters named after board-managed fields. It failed for seven such names before the fix.
