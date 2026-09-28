@@ -348,6 +348,7 @@ function render3d(){
 // ---------- command execution ----------
 async function execute(e,generation){
   const c=e.command||{};
+  if(e.presets)presets=e.presets;
   const clampTime=v=>{const n=+v;return Number.isFinite(n)?Math.min(10000,Math.max(0,n)):0;};
   const duration=clampTime(e.duration),stagger=clampTime(e.stagger);
   if(e.op==='view'){
@@ -589,6 +590,8 @@ addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();send({op:e.shiftKey?'redo':'undo'}).catch(()=>{});}
 });
 addEventListener('resize',()=>transform());
+// Tell the server at once when this tab stops being the one she is looking at.
+document.addEventListener('visibilitychange',()=>ack('checkpoint',seq));
 $('mode').classList.toggle('active',is3d());canvas.classList.toggle('three',is3d());
 transform();
 // Read-only diagnostics for local browser verification.
