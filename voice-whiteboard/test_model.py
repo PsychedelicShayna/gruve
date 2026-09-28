@@ -30,6 +30,20 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(self.s['objects']['c/body']['text'], 'new')
         self.assertIn('e', self.s['objects'])
 
+    def test_parameter_change_keeps_instance_group_edits(self):
+        self.card()
+        self.runop(op='set', select='c', props={'outline': True, 'padding': 30})
+        self.runop(op='set', select='c', props={'text': 'x'})
+        self.assertTrue(self.s['objects']['c']['outline'])
+        self.assertEqual(self.s['objects']['c']['padding'], 30)
+        self.assertEqual(self.s['objects']['c/body']['text'], 'x')
+
+    def test_parameter_change_keeps_removed_instance_group_field(self):
+        self.card()
+        self.runop(op='set', select='c', props={'layout': None})
+        self.runop(op='set', select='c', props={'text': 'x'})
+        self.assertNotIn('layout', self.s['objects']['c'])
+
     def test_direct_child_edit_protects_against_silent_loss(self):
         self.card()
         self.runop(op='set', select='c/body', props={'color': '#ff0000'})
@@ -189,6 +203,11 @@ class ModelTests(unittest.TestCase):
     def test_moving_a_preset_child_is_protected(self):
         self.runop(op='create', object={'id': 'k', 'type': 'cube', 'size': 50}); self.runop(op='move', select='k/back', by=[5, 0])
         with self.assertRaisesRegex(ValueError, 'resetOverrides'): self.runop(op='set', select='k', props={'size': 60})
+
+    def test_impulse_applies_once_to_selected_descendants_of_one_root(self):
+        self.runop(op='create', object={'id': 'k', 'type': 'cube', 'size': 50})
+        self.runop(op='impulse', select={'parent': 'k'}, velocity=[10, 0])
+        self.assertEqual(self.s['objects']['k']['vx'], 10)
 
     def test_group_props_cannot_impersonate_a_preset(self):
         self.runop(op='create', items=[{'id': 'p', 'type': 'rect', 'w': 5, 'h': 5}, {'id': 'q', 'type': 'rect', 'w': 5, 'h': 5}])
