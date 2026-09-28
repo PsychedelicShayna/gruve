@@ -18,7 +18,7 @@ SIDES = {'left', 'right', 'top', 'bottom'}
 FONTS = {'sans', 'mono'}
 ALIGNS = {'left', 'center', 'right'}
 # Paint values reach SVG fill/stroke attributes: colours only, never url(...) references.
-COLOR = re.compile(r'#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,30}|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]{1,80}\)')
+COLOR = re.compile(r'#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|[a-zA-Z]{3,30}|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]{1,80}\)')
 LAYOUTS = {'stack', 'row', 'grid'}
 
 COMMON = {'id', 'type', 'x', 'y', 'z', 'tags', 'opacity', 'pinned', 'body', 'mass', 'vx', 'vy', 'parent', 'preset', 'params', 'overridden', 'box', 'measured'}
