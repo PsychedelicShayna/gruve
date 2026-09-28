@@ -20,7 +20,16 @@ rm -rf "$store"
 mv "$store.tmp" "$store"
 
 mkdir -p "$(dirname "$link")"
-[ -L "$link" ] || ln -rs "$store" "$link"
+if [ -L "$link" ]; then
+    ln -rsfn "$store" "$link"
+else
+    if [ -e "$link" ]; then
+        backup="$link.bak-$(date +%s)"
+        mv -- "$link" "$backup"
+        echo "moved existing skill to $backup"
+    fi
+    ln -rs "$store" "$link"
+fi
 
 echo "launcher: $HOME/.local/bin/voice-whiteboard -> $repo/bin/voice-whiteboard"
 echo "skill:    $link -> $(readlink "$link") ($(cat "$store/app/VERSION"))"

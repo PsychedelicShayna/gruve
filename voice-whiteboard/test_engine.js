@@ -34,6 +34,11 @@ test('explicitly sized group reports overflow when children spill out',()=>{
   assert.equal(measured.get('g').overflow,true);
   assert.equal(measured.get('g').contentW,200);
 });
+test('fitting explicitly sized group reports no overflow',()=>{
+  const m=scene({id:'g',type:'group',w:50,h:50,children:['r']},{id:'r',type:'rect',parent:'g',w:20,h:10});
+  const {measured}=resolve(m,measure);
+  assert.equal(measured.get('g')?.overflow,false);
+});
 test('explicitly sized group reports children spilling past its left and top edges',()=>{
   const m=scene({id:'g',type:'group',w:100,h:100,children:['r']},{id:'r',type:'rect',parent:'g',x:-50,y:-20,w:10,h:10});
   const {measured}=resolve(m,measure);
