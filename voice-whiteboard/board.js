@@ -462,8 +462,8 @@ async function commitNote(){
 }
 async function placeMark(e){
   const raw=e.target.closest('[data-id]')?.dataset.id,target=raw?rootFor(raw,objects):null;
-  const p=toWorld(e.clientX,e.clientY);
-  const data=await postMark({x:p.x,y:p.y,target});
+  const p=toWorld(e.clientX,e.clientY),root=target&&layout.boxes.get(target);
+  const data=await postMark({x:p.x,y:p.y,target,...(root?{offset:[p.x-root.ox,p.y-root.oy]}:{})});
   showNoteInput(data.mark);
 }
 $('mark-note').onkeydown=e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();commitNote();}if(e.key==='Escape'){e.preventDefault();hideNoteInput();}};

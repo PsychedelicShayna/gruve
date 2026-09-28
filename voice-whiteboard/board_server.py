@@ -68,7 +68,12 @@ def add_mark(data):
     batch=unread[0]['batch'] if unread else (marks[-1]['batch']+1 if marks else 1)
     offset=None
     if target:
-        o=scene['objects'][target];offset=[x-o.get('x',0),y-o.get('y',0)]
+        if 'offset' in data:
+            supplied=data['offset']
+            if not isinstance(supplied,list) or len(supplied)!=2: raise ValueError('offset must be [dx, dy]')
+            offset=[number(supplied[0],'offset dx'),number(supplied[1],'offset dy')]
+        else:
+            o=scene['objects'][target];offset=[x-o.get('x',0),y-o.get('y',0)]
     m=dict(n=len(unread)+1,batch=batch,x=x,y=y,target=target,offset=offset,note=note,at=time.time()*1000,read=False)
     marks.append(m);marks_rev+=1;prune_marks();persist();lock.notify_all()
     return m
@@ -123,6 +128,8 @@ def commit(payload):
                 if not src:raise ValueError('nothing to '+op)
                 dst.append(before);candidate=src.pop();selected=[]
                 if layout_inputs(candidate)!=layout_inputs(before):candidate['layout_origins_stale']=True
+                if before.get('world_positions_stale') or before['physics']['enabled'] or candidate['physics']['enabled']:
+                    candidate['world_positions_stale']=True
             else:
                 selected=operation(candidate,c)
                 duration,stagger=timing(c)
@@ -271,6 +278,12 @@ class Handler(BaseHTTPRequestHandler):
                                if o.get('layout') or (o.get('parent') is not None and scene['objects'][o['parent']].get('layout')))
                         if all(isinstance(boxes.get(i),dict) and 'ox' in boxes[i] and 'oy' in boxes[i] for i in needs):
                             if scene.pop('layout_origins_stale',False):changed=True
+                    if (stage in ('done','checkpoint') and n==seq and data.get('visible')
+                            and not scene['physics']['enabled'] and isinstance(data.get('positions'),dict)):
+                        positions=data['positions']
+                        roots=(i for i,o in scene['objects'].items() if o.get('parent') is None)
+                        if all(isinstance(positions.get(i),dict) and all(k in positions[i] for k in ('x','y','z')) for i in roots):
+                            if scene.pop('world_positions_stale',False):changed=True
                     if changed:persist()
                 return self.json({'ok':True})
             return self.json({'error':'not found'},404)

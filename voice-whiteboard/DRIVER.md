@@ -118,6 +118,8 @@ Rules: `${name}` substitutes a parameter into a string (a whole-string `"${point
 
 For children positioned by a `layout`, `reparent` or `ungroup` needs a current browser-resolved position. After changing layout geometry, wait for the visible board to finish and report its boxes before moving those children out; the board rejects a stale origin rather than placing them at stored coordinates. Ungroup nested groups one level at a time. Reordering a preset instance's `children` is a structural override: a later parameter edit requires `resetOverrides:true` and restores the template order.
 
+If physics is active, or was active since the last browser position report, `group`, `ungroup`, and `reparent` reject ownership changes rather than using stale coordinates. Send `{"op":"physics","props":{"enabled":false}}`, wait for its completed visible browser report (`send --wait`), then issue the ownership command separately. Putting the pause and reparent in the same array cannot synchronize them.
+
 ## 3D
 
 The board is 2D until the camera is unlocked: `{"op":"view","mode":"3d","yaw":35,"pitch":-30}` (or the **3D** button). Then:

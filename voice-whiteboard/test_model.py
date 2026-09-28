@@ -165,6 +165,23 @@ class ModelTests(unittest.TestCase):
         self.runop(op='ungroup', select='g')
         self.assertEqual((self.s['objects']['d-1']['x'], self.s['objects']['d-1']['y']), (105, 55))
 
+    def test_ownership_changes_wait_for_paused_physics_report(self):
+        self.runop(op='create', items=[
+            {'id': 'g', 'type': 'group', 'body': True},
+            {'id': 'r', 'type': 'rect', 'x': 30, 'w': 10, 'h': 10}])
+        self.runop(op='reparent', select='r', into='g')
+        self.runop(op='impulse', select='g', velocity=[240, 0])
+        with self.assertRaisesRegex(ValueError, 'pause'):
+            self.runop(op='reparent', select='r', into=None)
+        with self.assertRaisesRegex(ValueError, 'pause'):
+            self.runop(op='ungroup', select='g')
+        self.runop(op='physics', props={'enabled': False})
+        with self.assertRaisesRegex(ValueError, 'report'):
+            self.runop(op='reparent', select='r', into=None)
+        self.s['world_positions_stale'] = False  # a full paused browser acknowledgment
+        self.runop(op='reparent', select='r', into=None)
+        self.assertEqual(self.s['objects']['r']['x'], 30)
+
     def test_move_group_and_descendant_translates_once(self):
         self.runop(op='create', items=[
             {'id': 'g', 'type': 'group', 'x': 100, 'y': 20, 'z': 10},

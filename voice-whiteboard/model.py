@@ -528,10 +528,18 @@ def layout_inputs(scene):
             for i, o in scene['objects'].items()}
 
 
+def require_frozen_positions(scene):
+    if scene['physics']['enabled']:
+        raise ValueError('pause physics and wait for a browser position report before changing ownership')
+    if scene.get('world_positions_stale'):
+        raise ValueError('wait for a paused browser position report before changing ownership')
+
+
 def world_position(scene, i):
     """World origin of i. A child of a laid-out group sits where the layout put it, which the
     browser reports as box.ox/oy; its stored x,y are ignored by the renderer. The reported offset
     from the parent's reported origin is used, so a parent moved since the report still counts."""
+    require_frozen_positions(scene)
     objs = scene['objects']
     x = y = z = 0
     while i is not None:
@@ -781,7 +789,10 @@ def operation(scene, c):
                 number(v, k)
                 if v < 0 or (k in ('damping', 'bounce') and v > 1):
                     raise ValueError('invalid physics coefficient')
+        was_enabled = scene['physics']['enabled']
         scene['physics'].update(props)
+        if was_enabled or scene['physics']['enabled']:
+            scene['world_positions_stale'] = True
     elif op == 'clear':
         selected = list(objs)
         objs.clear()
@@ -907,6 +918,7 @@ def operation(scene, c):
                 raise ValueError('grouped objects must share a parent')
             if any(objs[i]['type'] == 'edge' for i in selected):
                 raise ValueError('edges cannot be grouped')
+            require_frozen_positions(scene)
             parent = parents.pop()
             if parent is not None and objs[parent].get('layout'):
                 raise ValueError('cannot group children of a laid-out group; reparent them first')
@@ -933,6 +945,7 @@ def operation(scene, c):
         elif op == 'ungroup':
             if len(top_level(scene, selected)) != len(selected):
                 raise ValueError('ungroup nested groups one level at a time')
+            require_frozen_positions(scene)
             for i in selected:
                 if objs[i]['type'] != 'group':
                     raise ValueError('ungroup selects groups only')
@@ -979,6 +992,7 @@ def operation(scene, c):
                 objs[r]['vx'] = objs[r].get('vx', 0) + vx
                 objs[r]['vy'] = objs[r].get('vy', 0) + vy
             scene['physics']['enabled'] = True
+            scene['world_positions_stale'] = True
         elif op == 'layout':
             if c.get('mode', 'scatter') not in ('scatter', 'grid'):
                 raise ValueError('layout mode must be scatter or grid')
