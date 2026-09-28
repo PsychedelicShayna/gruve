@@ -47,7 +47,7 @@ Everything on the board is one of seven primitives. Presets (below) are shorthan
 | `edge` | `from`, `to`, `route`, `curve`, `head`, `tail`, `label` |
 | `group` | `children`, `w`, `h`, `layout`, `padding`, `title`, `outline` |
 
-Common: `id`, `type`, `x`, `y`, `tags`, `opacity`, `color` (stroke/text), `fill`, `strokeWidth`, `dash:[on,off]`, physics `body`, `pinned`, `mass`. Colours are `#rgb`/`#rrggbb`(`aa`), a CSS colour name, `rgb()`/`hsl()`, or `none`.
+Common: `id`, `type`, `x`, `y`, `tags`, `opacity`, `color` (stroke/text), `fill`, `strokeWidth`, `dash:[on,off]`, physics `body`, `pinned`, `mass`. Colours are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, a CSS colour name, `rgb()`/`hsl()`, or `none`; other hexadecimal lengths are rejected.
 
 ### Sizing
 
@@ -65,7 +65,7 @@ Resize a card by setting its `w`; the text re-wraps and the height follows. `{"o
 - `{"id":"poly","vertex":2}` — a polygon/polyline point;
 - `[x,y]` or `[x,y,z]` — a fixed world point; z is projected in 3D view.
 
-`route`: `straight` (default), `curve` (`curve` = bend in px, negative bends the other way), `elbow` (one axis-aligned bend). `head` (at `to`) and `tail` (at `from`): `none`, `arrow`, `open`, `diamond`, `dot`, `bar`. Dependency `{"head":"arrow"}`; both ways `{"head":"arrow","tail":"arrow"}`; composition `{"tail":"diamond"}`; inhibit `{"head":"bar"}`. Edges are roots, can attach to anything except other edges (children of groups included), follow their endpoints and disappear with them. `label` sits at the midpoint.
+`route`: `straight` (default), `curve` (`curve` = bend in px, negative bends the other way), `elbow` (one axis-aligned bend). `head` (at `to`) and `tail` (at `from`): `none`, `arrow`, `open`, `diamond`, `dot`, `bar`. Dependency `{"head":"arrow"}`; both ways `{"head":"arrow","tail":"arrow"}`; composition `{"tail":"diamond"}`; inhibit `{"head":"bar"}`. Edges are roots, can attach to anything except other edges (children of groups included), follow their endpoints and disappear with them. `label` sits at the midpoint. A visible browser reports each edge's routed world `box` in state, including fixed-point and curved connections; it excludes stroke and arrowheads.
 
 ## Presets
 
