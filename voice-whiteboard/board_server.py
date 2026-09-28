@@ -9,7 +9,7 @@ import threading
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from model import fresh, operation, patch, number, timing, upgrade, presets_of, top_level, VERSION
+from model import fresh, operation, patch, number, timing, upgrade, presets_of, top_level, root_of, layout_inputs, VERSION
 
 ROOT=Path(__file__).parent
 parser=argparse.ArgumentParser()
@@ -122,6 +122,7 @@ def commit(payload):
                 src,dst=(u,r) if op=='undo' else (r,u)
                 if not src:raise ValueError('nothing to '+op)
                 dst.append(before);candidate=src.pop();selected=[]
+                if layout_inputs(candidate)!=layout_inputs(before):candidate['layout_origins_stale']=True
             else:
                 selected=operation(candidate,c)
                 duration,stagger=timing(c)
@@ -130,7 +131,12 @@ def commit(payload):
             # Semantic commands still apply when browser physics has changed positions
             # beyond the last server checkpoint, even if the server diff is empty.
             if op in ('move','layout','set','impulse'):
-                affected=top_level(candidate, selected) if op=='move' else selected
+                if op=='move':
+                    affected=top_level(candidate, selected)
+                elif op=='impulse':
+                    affected=list(dict.fromkeys(root_of(candidate, i) for i in selected))
+                else:
+                    affected=selected
                 known={o['id'] for o in delta['upsert']}
                 for i in affected:
                     if i not in known:delta['upsert'].append(copy.deepcopy(candidate['objects'][i]))
@@ -259,6 +265,12 @@ class Handler(BaseHTTPRequestHandler):
                         if o.get(k,0 if k not in ('box','measured') else None)!=v:o[k]=v;changed=True
                     for o,k in removals:
                         del o[k];changed=True
+                    if stage in ('done','checkpoint') and n==seq and data.get('visible') and isinstance(data.get('boxes'),dict):
+                        boxes=data['boxes']
+                        needs=(i for i,o in scene['objects'].items()
+                               if o.get('layout') or (o.get('parent') is not None and scene['objects'][o['parent']].get('layout')))
+                        if all(isinstance(boxes.get(i),dict) and 'ox' in boxes[i] and 'oy' in boxes[i] for i in needs):
+                            if scene.pop('layout_origins_stale',False):changed=True
                     if changed:persist()
                 return self.json({'ok':True})
             return self.json({'error':'not found'},404)
