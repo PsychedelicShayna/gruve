@@ -1,0 +1,120 @@
+<!doctype html><html><body><pre id="results">RUNNING</pre><iframe src="/" style="width:1100px;height:700px"></iframe><script type="module">
+const results=[],frame=document.querySelector('iframe'),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const check=(ok,label)=>{if(!ok)throw Error(label);results.push('PASS '+label);};
+async function ready(){for(let i=0;i<100;i++){if(frame.contentWindow.boardDiagnostics)return;await sleep(30);}throw Error('board did not load');}
+const state=()=>frame.contentWindow.boardDiagnostics.state();
+async function send(c){const r=await fetch('/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});if(!r.ok)throw Error(await r.text());return r.json();}
+async function done(n){for(let i=0;i<250;i++){if(state().seq>=n&&!state().running)return;await sleep(20);}throw Error('queue timeout '+n);}
+try{
+ await ready();await done((await send({op:'clear',duration:0})).last);
+ const c=await send({op:'create',object:{id:'d',type:'dot',color:'#0088ff'},count:20,arrange:'grid',duration:100,stagger:8});await done(c.last);
+ const beforeNode=frame.contentDocument.querySelector('[data-id="d-19"]');
+ const sequence=await send([{op:'remove',select:{type:'dot',fraction:.5},duration:130,stagger:25},{op:'set',select:{type:'dot'},props:{color:'#ff0000'},duration:180}]);
+ await sleep(170);let s=state();check(Object.keys(s.objects).length>10&&Object.keys(s.objects).length<20,'progressive removal has intermediate object count');check(s.objects['d-19'].color==='#0088ff','survivor remains blue during removal');
+ await done(sequence.last);s=state();check(Object.keys(s.objects).length===10,'exactly half removed');check(s.objects['d-19'].color==='#ff0000','survivor recolored after deletion');check(frame.contentDocument.querySelector('[data-id="d-19"]')===beforeNode,'surviving DOM object identity preserved');
+ const batch=await send([{op:'create',object:{id:'new',type:'dot',color:'#00ff00'},duration:130},{op:'wait',duration:250},{op:'set',select:'new',props:{color:'#ff0000'},duration:130}]);await sleep(160);check(state().objects.new.color==='#00ff00','earlier create event retains original color');await done(batch.last);
+ const g=await send([{op:'group',id:'compound',select:['d-10','d-11'],props:{outline:false}},{op:'move',select:'compound',by:[100,50],duration:300}]);await done(g.last);s=state();check(Math.abs((s.objects['d-11'].x-s.objects['d-10'].x)-45)<.1,'compound preserves member offsets');
+ const childX=state().objects['d-10'].x;const nestedMove=await send({op:'move',select:['compound','d-10'],by:[30,12,5],duration:100});await done(nestedMove.last);check(state().objects['d-10'].x===childX,'selecting a group and child moves the child only through its parent');
+ const impulseSetup=await send([{op:'create',object:{id:'impulse-child',type:'dot',body:true,vx:7,vy:0}},{op:'group',id:'impulse-group',select:'impulse-child',props:{outline:false}},{op:'physics',props:{enabled:false,repulsion:0,center:0,damping:1,collision:false}}]);await done(impulseSetup.last);
+ const childVelocity=state().objects['impulse-child'].vx,rootVelocity=state().objects['impulse-group'].vx||0;
+ const childImpulse=await send({op:'impulse',select:'impulse-child',velocity:[90,0],duration:180});await done(childImpulse.last);
+ let impulseRemote=(await (await fetch('/state')).json()).objects;
+ check(state().objects['impulse-child'].vx===childVelocity&&impulseRemote['impulse-child'].vx===childVelocity&&state().objects['impulse-group'].vx===rootVelocity+90&&impulseRemote['impulse-group'].vx===rootVelocity+90,'impulse on body child changes only the root velocity in browser and persisted scene');
+ const sharedImpulse=await send({op:'impulse',select:['impulse-group','impulse-child'],velocity:[45,0],duration:180});await done(sharedImpulse.last);
+ impulseRemote=(await (await fetch('/state')).json()).objects;
+ check(state().objects['impulse-child'].vx===childVelocity&&impulseRemote['impulse-child'].vx===childVelocity&&state().objects['impulse-group'].vx===rootVelocity+135&&impulseRemote['impulse-group'].vx===rootVelocity+135,'group and child impulse applies once to the root without changing the child');
+ const impulsePause=await send({op:'physics',props:{enabled:false}});await done(impulsePause.last);
+ for(let i=0;i<100;i++){if(!(await(await fetch('/state')).json()).world_positions_stale)break;await sleep(25);}
+ const rowParts=await send({op:'create',items:[{id:'row-a',type:'rect',x:700,y:500,w:20,h:20},{id:'row-b',type:'rect',x:820,y:500,w:20,h:20}]});await done(rowParts.last);
+ const staleRow=await fetch('/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([{op:'group',id:'row',select:['row-a','row-b'],props:{layout:{type:'row'},padding:10}},{op:'reparent',select:'row-b',into:null}])});check(staleRow.status===400,'layout and immediate reparent reject stale position atomically');
+ const row=await send({op:'group',id:'row',select:['row-a','row-b'],props:{layout:{type:'row'},padding:10}});await done(row.last);
+ let rowReport;for(let i=0;i<100;i++){rowReport=await(await fetch('/state')).json();if(!rowReport.layout_origins_stale&&rowReport.objects['row-b'].box)break;await sleep(25);}
+ const rowX=state().boxes['row-b'].ox;const freeRow=await send({op:'reparent',select:'row-b',into:null});await done(freeRow.last);check(Math.abs(state().objects['row-b'].x-rowX)<1,'reparent after fresh layout report preserves rendered position');
+ const rejection=await fetch('/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([{op:'create',object:{id:'should-not-exist',type:'dot'}},{op:'move',select:'missing',by:[1,2]}])});check(rejection.status===400,'invalid batch rejected');const remote=await (await fetch('/state')).json();check(!remote.objects['should-not-exist'],'invalid batch commits no partial state');
+ await done((await send({op:'create',object:{id:'xss',type:'card',title:'<b>t</b>',text:'<img src=x onerror=alert(1)>'}})).last);check(!frame.contentDocument.querySelector('img')&&!frame.contentDocument.querySelector('.text b'),'text remains text, not HTML');
+ s=state();check(s.objects['xss/body'].text.startsWith('<img')&&s.objects['xss'].type==='group','card is a group of primitives with stable child ids');
+ check(s.boxes['xss'].h>s.boxes['xss/title'].h+s.boxes['xss/body'].h&&Math.abs(s.boxes['xss/bg'].h-s.boxes['xss'].h)<.01,'card hugs its text and the background fills it');
+ await done((await send({op:'set',select:'xss',props:{text:'x'.repeat(600)}})).last);const tall=state().boxes['xss'].h;check(tall>s.boxes['xss'].h+40,'parameter change re-expands and the card grows');
+ await done((await send({op:'set',select:'xss/body',props:{h:30}})).last);check(state().measured['xss/body'].overflow===true,'fixed text height reports overflow');
+ await done((await send({op:'create',object:{id:'tbl',type:'table',x:600,y:0,rows:[['a','b'],['c','d'.repeat(80)]],cols:2,cellW:120}})).last);s=state();check(s.boxes['tbl/cell-1-0'].h===s.boxes['tbl/cell-1-1'].h&&s.boxes['tbl/cell-1-0'].h>s.boxes['tbl/cell-0-0'].h,'table rows are content sized and cells stretch');
+ await sleep(1700);const remoteBoxes=(await (await fetch('/state')).json()).objects;check(remoteBoxes['tbl'].box&&typeof remoteBoxes['tbl'].box.h==='number'&&remoteBoxes['xss/body'].measured.overflow===true,'browser-resolved boxes and measurements reach the server');
+ const motion=await send([{op:'create',object:{id:'runner',type:'dot',x:0,y:400,body:true},duration:0},{op:'physics',props:{enabled:true,repulsion:0,center:0,damping:1,collision:false}},{op:'impulse',select:'runner',velocity:[150,0]},{op:'wait',duration:250},{op:'physics',props:{enabled:false}},{op:'move',select:'runner',to:[0,400],duration:100}]);await done(motion.last);check(Math.abs(state().objects.runner.x)<.1,'move to unchanged server position still acts after local physics');
+ await done((await send({op:'physics',props:{enabled:true}})).last);const x0=state().objects.runner.x;const tint=await send({op:'set',select:'runner',props:{color:'#00ff00'},duration:300});await sleep(140);check(state().objects.runner.x>x0+5,'style animation does not freeze physics');await done(tint.last);await done((await send({op:'physics',props:{enabled:false}})).last);
+ const relative=await send([{op:'create',object:{id:'relative-runner',type:'dot',x:0,y:500,z:3,body:true}},{op:'physics',props:{enabled:true,repulsion:0,center:0,damping:1,collision:false}},{op:'impulse',select:'relative-runner',velocity:[180,0]},{op:'wait',duration:250}]);await done(relative.last);
+ const beforeRelative=state().objects['relative-runner'];check(beforeRelative.x>15,'physics advances relative mover before server checkpoint');
+ const relativeMove=await send({op:'move',select:'relative-runner',by:[80,0,7],duration:220});await done(relativeMove.last);
+ const movedRelative=state().objects['relative-runner'];check(movedRelative.x>=beforeRelative.x+79&&movedRelative.z===beforeRelative.z+7,'relative move continues from live physics position through animation finalization, including z');
+ await done((await send({op:'physics',props:{enabled:false}})).last);
+ const markSetup=await send([{op:'create',object:{id:'mark-child',type:'rect',x:240,y:620,w:120,h:80,body:true}},{op:'group',id:'mark-root',select:'mark-child',props:{outline:false}},{op:'view',center:[300,660],zoom:1,duration:0},{op:'physics',props:{enabled:true,repulsion:0,center:0,damping:1,collision:false}},{op:'impulse',select:'mark-root',velocity:[130,0]}]);await done(markSetup.last);
+ let drift=0;for(let i=0;i<100;i++){const remoteRoot=(await(await fetch('/state')).json()).objects['mark-root'];drift=state().boxes['mark-root'].ox-remoteRoot.x;if(Math.abs(drift)>18)break;await sleep(20);}
+ check(Math.abs(drift)>18,'moving mark root has advanced beyond persisted scene position');
+ const childShape=frame.contentDocument.querySelector('[data-id="mark-child"] .shape'),childRect=childShape.getBoundingClientRect(),clickX=childRect.left+childRect.width/2,clickY=childRect.top+childRect.height/2;
+ const marksBefore=state().marks.length,originAtClick=state().boxes['mark-root'].ox;frame.contentDocument.getElementById('point').click();
+ childShape.dispatchEvent(new frame.contentWindow.PointerEvent('pointerdown',{bubbles:true,button:0,clientX:clickX,clientY:clickY}));
+ let placed;for(let i=0;i<100;i++){if(state().marks.length>marksBefore){placed=state().marks.at(-1);break;}await sleep(20);}
+ check(placed?.target==='mark-root','clicking moving grouped descendant creates a mark on its root');
+ const markCenter=()=>{const r=frame.contentDocument.querySelector('#marks .mark:last-child circle').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};};
+ let drawn=markCenter(),originNow=state().boxes['mark-root'].ox;
+ check(Math.abs(drawn.x-clickX-(originNow-originAtClick)*state().view.zoom)<2&&Math.abs(drawn.y-clickY)<2,'moving grouped root mark appears at clicked browser position');
+ await sleep(160);originNow=state().boxes['mark-root'].ox;drawn=markCenter();
+ check(originNow>originAtClick+5&&Math.abs(drawn.x-clickX-(originNow-originAtClick)*state().view.zoom)<3&&Math.abs(drawn.y-clickY)<3,'mark stays attached to moving root after click');
+ const invalidOffset=await fetch('/marks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({x:clickX,y:clickY,target:'mark-root',offset:[true,0]})});
+ check(invalidOffset.status===400,'recognized target rejects nonnumeric mark offset');
+ const freeMark=await fetch('/marks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({x:18,y:25,target:'missing-root',offset:['ignored',false]})});
+ const freeData=await freeMark.json();check(freeMark.ok&&freeData.mark.target===null&&freeData.mark.offset===null,'unrecognized target remains a free mark without validating offset');
+ frame.contentDocument.getElementById('point').click();await done((await send({op:'physics',props:{enabled:false}})).last);
+ const physicsSetup=await send([{op:'create',items:[{id:'phys-root',type:'group',x:120,y:700,body:true},{id:'phys-child',type:'rect',x:160,y:700,w:10,h:10}]},{op:'reparent',select:'phys-child',into:'phys-root'},{op:'physics',props:{enabled:true,repulsion:0,center:0,damping:1,collision:false}},{op:'impulse',select:'phys-root',velocity:[240,0]}]);await done(physicsSetup.last);
+ const runningWait=await send({op:'wait',duration:400});const racingReparent=await fetch('/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'reparent',select:'phys-child',into:null})});
+ check(racingReparent.status===400,'reparent rejects a live physics position before checkpoint');await done(runningWait.last);
+ const atomicPause=await fetch('/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify([{op:'physics',props:{enabled:false}},{op:'reparent',select:'phys-child',into:null}])});
+ check(atomicPause.status===400,'pause and reparent in one batch cannot skip the browser report');
+ const paused=await send({op:'physics',props:{enabled:false}});await done(paused.last);
+ let frozen;for(let i=0;i<100;i++){frozen=await(await fetch('/state')).json();if(!frozen.world_positions_stale)break;await sleep(25);}
+ check(!frozen.world_positions_stale,'paused full browser report reconciles live root position');
+ const beforeDetach=state().boxes['phys-child'].ox;const detach=await send({op:'reparent',select:'phys-child',into:null});await done(detach.last);
+ check(Math.abs(state().boxes['phys-child'].ox-beforeDetach)<1,'reparent after pause preserves live physics position');
+ const line=await send({op:'create',object:{id:'fit-horizontal',type:'polyline',x:2000,y:1200,points:[[0,0],[200,0]]}});await done(line.last);
+ await done((await send({op:'view',fit:['fit-horizontal'],duration:0})).last);check(Math.abs(state().view.cx-2100)<1&&Math.abs(state().view.cy-1200)<1,'fit centers a horizontal zero-height polyline');
+ const vertical=await send({op:'create',object:{id:'fit-vertical',type:'polyline',x:-1800,y:-900,points:[[0,0],[0,180]]}});await done(vertical.last);
+ await done((await send({op:'view',fit:['fit-vertical'],duration:0})).last);check(Math.abs(state().view.cx+1800)<1&&Math.abs(state().view.cy+810)<1,'fit centers a vertical zero-width polyline');
+ const undoBefore=state().objects.new.color;await done((await send({op:'set',select:'new',props:{color:'#111111'}})).last);await done((await send({op:'undo'})).last);check(state().objects.new.color===undoBefore,'undo restores scene');await done((await send({op:'redo'})).last);check(state().objects.new.color==='#111111','redo reapplies scene');
+ const countBefore=Object.keys(state().objects).length;frame.src='/';await sleep(200);await ready();check(Object.keys(state().objects).length===countBefore,'reconnect restores snapshot without replaying creation');
+ const isolated=await send({op:'clear',duration:0});await done(isolated.last);
+ const ellipses=await send({op:'create',items:[{id:'radius-resize',type:'ellipse',x:100,y:200,r:30},{id:'sized-resize',type:'ellipse',x:300,y:200,w:80,h:40}]});await done(ellipses.last);
+ const board=frame.contentDocument.getElementById('canvas'),originalCapture=board.setPointerCapture,originalFetch=frame.contentWindow.fetch,resizeCommands=[];
+ frame.contentWindow.fetch=function(url,options){if(url==='/commands')resizeCommands.push(JSON.parse(options.body));return originalFetch.call(this,url,options);};
+ board.setPointerCapture=()=>{};
+ try{
+   for(const id of ['radius-resize','sized-resize']){
+     const start=state().boxes[id],x=400,y=300;
+     board.onpointerdown({button:0,target:{dataset:{handle:id}},clientX:x,clientY:y,pointerId:1});
+     board.onpointermove({clientX:x+40,clientY:y+25});
+     board.onpointerup({});
+     for(let i=0;i<100;i++){if(resizeCommands.length>=(['radius-resize','sized-resize'].indexOf(id)+1))break;await sleep(20);}
+     const resize=resizeCommands.at(-1);
+     check(resize?.op==='set'&&resize.select===id&&resize.props.w>start.w&&resize.props.h>start.h&&(id==='radius-resize'?resize.props.r===null:!Object.hasOwn(resize.props,'r')),id==='radius-resize'?'radius resize sends deletion with new dimensions':'sized ellipse resize does not send radius deletion');
+     for(let i=0;i<100;i++){const persisted=(await(await fetch('/state')).json()).objects[id];if(persisted?.w===resize.props.w&&persisted?.h===resize.props.h&&(!Object.hasOwn(persisted,'r')))break;await sleep(20);}
+     const persisted=(await(await fetch('/state')).json()).objects[id];
+     check(persisted.w===resize.props.w&&persisted.h===resize.props.h&&!Object.hasOwn(persisted,'r'),id==='radius-resize'?'resized radius ellipse stays nonsquare in persisted scene':'sized ellipse dimensions persist');
+   }
+ }finally{board.setPointerCapture=originalCapture;frame.contentWindow.fetch=originalFetch;}
+ const edges=await send({op:'create',items:[{id:'fixed-fit',type:'edge',from:[3200,4000],to:[3600,4000]},{id:'linked-fit-node',type:'rect',x:4200,y:1700,w:100,h:100},{id:'linked-fit',type:'edge',from:'linked-fit-node',to:[5800,1900],route:'elbow'}]});await done(edges.last);
+ await done((await send({op:'view',fit:['fixed-fit'],duration:0})).last);
+ check(Math.abs(state().view.cx-3400)<1&&Math.abs(state().view.cy-4000)<1&&state().view.zoom>0,'fit selected fixed-point edge includes both endpoints and zero-height axis');
+ const linkedPath=frame.contentDocument.querySelector('[data-id="linked-fit"] path'),linkedBounds=linkedPath.getBBox();
+ await done((await send({op:'view',fit:['linked-fit'],duration:0})).last);
+ check(Math.abs(state().view.cx-(linkedBounds.x+linkedBounds.width/2))<1&&Math.abs(state().view.cy-(linkedBounds.y+linkedBounds.height/2))<1,'fit selected linked-to-fixed edge includes routed world endpoints');
+ await done((await send({op:'view',fit:true,duration:0})).last);
+ const allBox=Object.entries(state().boxes).filter(([id])=>!['fixed-fit','linked-fit'].includes(id)).map(([,b])=>b),xMin=Math.min(...allBox.map(b=>b.x),3200,linkedBounds.x),xMax=Math.max(...allBox.map(b=>b.x+b.w),3600,linkedBounds.x+linkedBounds.width),yMin=Math.min(...allBox.map(b=>b.y),4000,linkedBounds.y),yMax=Math.max(...allBox.map(b=>b.y+b.h),4000,linkedBounds.y+linkedBounds.height);
+ check(Math.abs(state().view.cx-(xMin+xMax)/2)<1&&Math.abs(state().view.cy-(yMin+yMax)/2)<1,'fit all includes fixed and linked edge route bounds');
+ const curved=await send({op:'create',object:{id:'curve-fit',type:'edge',from:[0,0],to:[100,0],route:'curve',curve:80}});await done(curved.last);
+ let reported;for(let i=0;i<100;i++){reported=(await(await fetch('/state')).json()).objects;if(reported['fixed-fit'].box&&reported['linked-fit'].box&&reported['curve-fit'].box)break;await sleep(20);}
+ const fixedBox=reported['fixed-fit'].box,linkedBox=reported['linked-fit'].box,curveBox=reported['curve-fit'].box;
+ check(fixedBox.x===3200&&fixedBox.y===4000&&fixedBox.w===400&&fixedBox.h===0,'full browser report persists fixed-coordinate edge bounds');
+ check(Math.abs(linkedBox.x-linkedBounds.x)<.1&&Math.abs(linkedBox.y-linkedBounds.y)<.1&&Math.abs(linkedBox.w-linkedBounds.width)<.1&&Math.abs(linkedBox.h-linkedBounds.height)<.1,'full browser report persists linked elbow route bounds');
+ check(curveBox.x===0&&curveBox.y===0&&curveBox.w===100&&curveBox.h===40,'curved edge bounds follow quadratic extrema, not control-point hull');
+ await sleep(50);const final=await (await fetch('/status')).json();check(Object.values(final.receipts).some(r=>Object.values(r).some(v=>v&&typeof v==='object'&&typeof v.firstFrameMs==='number'&&typeof v.doneMs==='number')),'first-frame and completion metrics recorded');
+ document.getElementById('results').textContent=results.join('\n')+'\nALL PASS';
+ await fetch('/test-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passed:true,results,receipts:final.receipts})});
+}catch(e){document.getElementById('results').textContent=results.join('\n')+'\nFAIL '+e.stack;await fetch('/test-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({passed:false,results,error:e.stack})});}
+</script></body></html>
