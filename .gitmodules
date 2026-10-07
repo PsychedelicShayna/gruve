@@ -1,0 +1,6 @@
+[submodule "bnuuy-tts"]
+	path = bnuuy-tts
+	url = https://github.com/PsychedelicShayna/bnuuy-tts
+[submodule "bnuuy-stt"]
+	path = bnuuy-stt
+	url = https://github.com/PsychedelicShayna/bnuuy-stt
